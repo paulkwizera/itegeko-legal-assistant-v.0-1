@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Itegeko — Rwanda Legal Assistant</title>
+    <meta name="description"
+        content="Itegeko is a professional AI legal assistant specializing in the laws and legal system of Rwanda.">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@300;400;500;600&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+</head>
+
+<body>
+
+    <aside class="sidebar">
+        <div class="logo-wrap">
+            <div class="logo-emblem">⚖</div>
+            <div class="logo-text">
+                <div class="logo-name">Itegeko</div>
+                <div class="logo-tag">Legal Assistant</div>
+            </div>
+        </div>
+
+        <div class="flag-stripe">
+            <span class="s-blue"></span>
+            <span class="s-yellow"></span>
+            <span class="s-green"></span>
+        </div>
+
+        <button class="new-chat-btn" onclick="startNewChat()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            New conversation
+        </button>
+
+        <div>
+            <div class="sidebar-section-label">Legal Areas</div>
+            <div class="topic-list">
+                <div class="topic-item"
+                    onclick="askTopic('What does the Constitution of Rwanda say about fundamental rights?')"><span
+                        class="topic-icon">📜</span> Constitutional Law</div>
+                <div class="topic-item" onclick="askTopic('Explain the criminal justice process in Rwanda.')"><span
+                        class="topic-icon">⚖</span> Criminal Law</div>
+                <div class="topic-item" onclick="askTopic('What are the land ownership rights under Rwandan law?')">
+                    <span class="topic-icon">🏡</span> Land & Property Law</div>
+                <div class="topic-item" onclick="askTopic('What are the marriage and divorce laws in Rwanda?')"><span
+                        class="topic-icon">👨‍👩‍👧</span> Family Law</div>
+                <div class="topic-item" onclick="askTopic('How are businesses registered and regulated in Rwanda?')">
+                    <span class="topic-icon">🏢</span> Commercial Law</div>
+                <div class="topic-item" onclick="askTopic('What are employee rights and labor regulations in Rwanda?')">
+                    <span class="topic-icon">👷</span> Labour Law</div>
+                <div class="topic-item" onclick="askTopic('How does the court system work in Rwanda?')"><span
+                        class="topic-icon">🏛</span> Judiciary System</div>
+            </div>
+        </div>
+
+        <div class="sidebar-footer">
+            <div class="disclaimer-title">⚠ Legal Disclaimer</div>
+            <div class="disclaimer-text">This AI provides general legal information only. For personal legal matters,
+                always consult a licensed Rwandan advocate.</div>
+        </div>
+    </aside>
+
+    <div class="main">
+        <div class="topbar">
+            <div class="topbar-left">
+                <div class="topbar-title">Itegeko Legal Assistant</div>
+                <div class="topbar-sub">Rwandan law guidance · Scroll through past answers</div>
+            </div>
+            <div class="topbar-right">
+                <div class="status-pill" id="statusPill"><span class="status-dot"></span> Online</div>
+                <div class="model-badge">gemini-3.5-flash</div>
+            </div>
+        </div>
+
+        <div class="chat-messages" id="chatMessages">
+            <div class="welcome-hero" id="welcomeHero">
+                <div class="hero-seal">⚖</div>
+                <div class="hero-title">Itegeko <span>Legal</span> Assistant</div>
+                <div class="hero-sub">Ask me anything about Rwandan law. I specialise in legislation, judicial procedures,
+                    and constitutional rights with clear, practical guidance.</div>
+                <div class="hero-topics">
+                    <div class="topic-chip"
+                        onclick="askTopic('What are my fundamental rights under the 2003 Constitution of Rwanda as amended in 2015?')">
+                        <span class="tc-icon">📜</span><span class="tc-text"><strong>Constitutional
+                                Rights</strong>Fundamental rights &amp; freedoms</span></div>
+                    <div class="topic-chip"
+                        onclick="askTopic('How does land registration work in Rwanda and who can own land?')"><span
+                            class="tc-icon">🏡</span><span class="tc-text"><strong>Land Law</strong>Ownership,
+                            registration &amp; disputes</span></div>
+                    <div class="topic-chip"
+                        onclick="askTopic('What is the process for registering a company in Rwanda?')"><span
+                            class="tc-icon">🏢</span><span class="tc-text"><strong>Business Registration</strong>Company
+                            law &amp; regulations</span></div>
+                    <div class="topic-chip"
+                        onclick="askTopic('What are the grounds for divorce under Rwandan family law?')"><span
+                            class="tc-icon">👨‍👩‍👧</span><span class="tc-text"><strong>Family Law</strong>Marriage,
+                            divorce &amp; custody</span></div>
+                    <div class="topic-chip"
+                        onclick="askTopic('What are the rights of an accused person during criminal proceedings in Rwanda?')">
+                        <span class="tc-icon">⚖</span><span class="tc-text"><strong>Criminal Procedure</strong>Rights of
+                            the accused</span></div>
+                    <div class="topic-chip"
+                        onclick="askTopic('What are the minimum wage and employee protection laws in Rwanda?')"><span
+                            class="tc-icon">👷</span><span class="tc-text"><strong>Labour Law</strong>Employee rights
+                            &amp; contracts</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="input-area">
+            <div class="input-box">
+                <textarea id="userInput"
+                    placeholder="Ask about Rwandan law, e.g. 'What are the penalties for corruption under Rwandan law?'"
+                    rows="1" maxlength="4000"></textarea>
+                <button class="send-btn" id="sendBtn" onclick="sendMessage()" title="Send">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <line x1="22" y1="2" x2="11" y2="13" />
+                        <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                    </svg>
+                </button>
+            </div>
+            <div class="input-footer">
+                <span class="input-hint">Enter to send · Shift+Enter for new line</span>
+                <span id="charCount">0 / 4000</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const messagesEl = document.getElementById('chatMessages');
+        const inputEl = document.getElementById('userInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const charCount = document.getElementById('charCount');
+        const welcomeHero = document.getElementById('welcomeHero');
+        const statusPill = document.getElementById('statusPill');
+
+        let lastFailedMessage = null;
+
+        inputEl.addEventListener('input', () => {
+            inputEl.style.height = 'auto';
+            inputEl.style.height = Math.min(inputEl.scrollHeight, 130) + 'px';
+            charCount.textContent = `${inputEl.value.length} / 4000`;
+        });
+
+        inputEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+        });
+
+        function askTopic(text) {
+            inputEl.value = text;
+            inputEl.dispatchEvent(new Event('input'));
+            sendMessage();
+        }
+
+        function getTime() {
+            return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        // Minimal, safe markdown renderer: escapes HTML first, then applies a
+        // small set of formatting rules. No raw HTML from the model is ever
+        // injected directly.
+        function renderMarkdown(raw) {
+            const escape = (s) => s
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+
+            let text = escape(raw);
+
+            text = text.replace(/^### (.*)$/gm, '<h3>$1</h3>');
+            text = text.replace(/^## (.*)$/gm, '<h2>$1</h2>');
+            text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+            // Turn consecutive "- " or "* " lines into a <ul>, and "1. " into <ol>.
+            const lines = text.split('\n');
+            let html = '';
+            let listType = null;
+            let paragraphBuf = [];
+
+            const flushParagraph = () => {
+                if (paragraphBuf.length) {
+                    html += `<p>${paragraphBuf.join(' ')}</p>`;
+                    paragraphBuf = [];
+                }
+            };
+            const closeList = () => {
+                if (listType) { html += `</${listType}>`; listType = null; }
+            };
+
+            for (const line of lines) {
+                const bulletMatch = line.match(/^\s*[-*]\s+(.*)$/);
+                const numberedMatch = line.match(/^\s*\d+\.\s+(.*)$/);
+
+                if (bulletMatch) {
+                    flushParagraph();
+                    if (listType !== 'ul') { closeList(); html += '<ul>'; listType = 'ul'; }
+                    html += `<li>${bulletMatch[1]}</li>`;
+                } else if (numberedMatch) {
+                    flushParagraph();
+                    if (listType !== 'ol') { closeList(); html += '<ol>'; listType = 'ol'; }
+                    html += `<li>${numberedMatch[1]}</li>`;
+                } else if (line.trim() === '') {
+                    flushParagraph();
+                    closeList();
+                } else if (line.match(/^<h[23]>/)) {
+                    flushParagraph();
+                    closeList();
+                    html += line;
+                } else {
+                    paragraphBuf.push(line);
+                }
+            }
+            flushParagraph();
+            closeList();
+            return html;
+        }
+
+        function appendMessage(text, type, isTyping = false) {
+            if (welcomeHero) welcomeHero.style.display = 'none';
+
+            const row = document.createElement('div');
+            row.className = `message-row ${type === 'user' ? 'user-row' : 'bot-row'}`;
+
+            const avatar = document.createElement('div');
+            avatar.className = `msg-avatar ${type === 'user' ? 'user-avatar' : 'bot-avatar'}`;
+            avatar.textContent = type === 'user' ? '👤' : '⚖';
+
+            const content = document.createElement('div');
+            content.className = 'msg-content';
+
+            const sender = document.createElement('div');
+            sender.className = 'msg-sender';
+            sender.textContent = type === 'user' ? 'You' : 'Itegeko · Legal Assistant';
+
+            const bubble = document.createElement('div');
+            const id = 'msg-' + Date.now() + Math.random().toString(36).slice(2);
+            bubble.id = id;
+
+            if (isTyping) {
+                bubble.className = 'bubble bot-bubble';
+                bubble.innerHTML = `<div class="typing-dots"><span></span><span></span><span></span></div>`;
+            } else if (type === 'user') {
+                bubble.className = 'bubble user-bubble';
+                bubble.textContent = text;
+            } else {
+                bubble.className = 'bubble bot-bubble';
+                bubble.innerHTML = renderMarkdown(text);
+            }
+
+            const time = document.createElement('div');
+            time.className = 'msg-time';
+            time.textContent = getTime();
+
+            content.appendChild(sender);
+            content.appendChild(bubble);
+            content.appendChild(time);
+
+            row.appendChild(avatar);
+            row.appendChild(content);
+
+            messagesEl.appendChild(row);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+            return { id, row };
+        }
+
+        function updateMessage(id, text, isError = false) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            if (isError) {
+                el.className = 'bubble bot-bubble error-bubble';
+                el.textContent = text;
+            } else {
+                el.className = 'bubble bot-bubble';
+                el.innerHTML = renderMarkdown(text);
+            }
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+
+        function setOnlineStatus(online) {
+            if (online) {
+                statusPill.classList.remove('offline');
+                statusPill.innerHTML = '<span class="status-dot"></span> Online';
+            } else {
+                statusPill.classList.add('offline');
+                statusPill.innerHTML = '<span class="status-dot"></span> Rate limited';
+            }
+        }
+
+        async function sendMessage(retryText = null) {
+            const text = retryText !== null ? retryText : inputEl.value.trim();
+            if (!text || sendBtn.disabled) return;
+
+            if (retryText === null) {
+                appendMessage(text, 'user');
+                inputEl.value = '';
+                inputEl.style.height = 'auto';
+                charCount.textContent = '0 / 4000';
+            }
+            sendBtn.disabled = true;
+
+            const { id: loadingId } = appendMessage('', 'bot', true);
+
+            try {
+                const res = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text })
+                });
+                const data = await res.json();
+
+                if (res.ok && data.response) {
+                    updateMessage(loadingId, data.response);
+                    setOnlineStatus(true);
+                    lastFailedMessage = null;
+                } else {
+                    updateMessage(loadingId, '⚠ ' + (data.error || 'An unknown error occurred.'), true);
+                    if (res.status === 429) setOnlineStatus(false);
+                    lastFailedMessage = text;
+                }
+            } catch (err) {
+                updateMessage(loadingId, '⚠ Unable to reach the server. Please check your connection and try again.', true);
+                lastFailedMessage = text;
+            }
+
+            sendBtn.disabled = false;
+            inputEl.focus();
+        }
+
+        function renderStoredMessage(item) {
+            const { id } = appendMessage(item.role === 'user' ? item.text : '', item.role === 'user' ? 'user' : 'bot');
+            if (item.role !== 'user') {
+                updateMessage(id, item.text);
+            }
+            const timeEl = document.getElementById(id).parentElement.querySelector('.msg-time');
+            if (timeEl && item.time) timeEl.textContent = item.time;
+        }
+
+        async function loadHistory() {
+            try {
+                const res = await fetch('/chat/history');
+                const data = await res.json();
+                const history = data.history || [];
+                if (history.length > 0) {
+                    welcomeHero.style.display = 'none';
+                    history.forEach(renderStoredMessage);
+                    messagesEl.scrollTop = messagesEl.scrollHeight;
+                }
+            } catch (err) {
+                // No history available (e.g. first visit) — leave the welcome hero showing.
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', loadHistory);
+
+        async function startNewChat() {
+            try {
+                await fetch('/chat/new', { method: 'POST' });
+            } catch (err) {
+                // Even if the server call fails, clear the visible thread —
+                // a fresh session id will be issued on the next message.
+            }
+            messagesEl.innerHTML = '';
+            messagesEl.appendChild(welcomeHero);
+            welcomeHero.style.display = 'flex';
+            lastFailedMessage = null;
+        }
+    </script>
+
+</body>
+
+</html>

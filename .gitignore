@@ -1,0 +1,4 @@
+# Never commit your API keys to git
+.env
+__pycache__/
+*.pyc
