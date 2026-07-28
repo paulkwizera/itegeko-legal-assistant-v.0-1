@@ -19,11 +19,13 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(24))
 
 API_KEY = os.environ.get("GEMINI_API_KEY")
+if not API_KEY:
+    print("Error: GEMINI_API_KEY environment variable not set.")
+    sys.exit(1)
+
 MODEL_NAME = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
 
-client = genai.Client(api_key=API_KEY) if API_KEY else None
-if not API_KEY:
-    logger.warning("GEMINI_API_KEY environment variable not set. The chat UI will run, but AI responses will be unavailable until it is configured.")
+client = genai.Client(api_key=API_KEY)
 
 SYSTEM_INSTRUCTION = (
     "You are Itegeko, a professional AI legal assistant specializing exclusively in the laws and "
@@ -115,9 +117,6 @@ def chat_endpoint():
     if len(user_message) > 4000:
         return jsonify({"error": "That message is too long (4000 character limit)."}), 400
 
-    if client is None:
-        return jsonify({"error": "The AI service is not configured yet. Please set GEMINI_API_KEY to enable responses."}), 503
-
     entry = get_chat_for_session()
     chat = entry["chat"]
 
@@ -180,7 +179,7 @@ def new_chat():
 
 @app.route("/health")
 def health():
-    return jsonify({"status": "ok", "model": MODEL_NAME, "active_sessions": len(_sessions), "configured": client is not None})
+    return jsonify({"status": "ok", "model": MODEL_NAME, "active_sessions": len(_sessions)})
 
 
 if __name__ == "__main__":
