@@ -1,9 +1,10 @@
 :root {
     --bg: #0a0e14;
+    --sidebar-bg: #14171e;
+    --sidebar-hover: #1d212a;
     --surface: #1c1f26;
     --surface-hover: #24272f;
-    --rail: #0a0e14;
-    --border: rgba(255, 255, 255, 0.06);
+    --border: rgba(255, 255, 255, 0.07);
     --text-primary: #e8eaed;
     --text-secondary: #9aa0a6;
     --text-muted: #5f6368;
@@ -17,6 +18,8 @@
     --radius-pill: 28px;
     --radius-lg: 18px;
     --radius-md: 12px;
+    --sidebar-collapsed: 64px;
+    --sidebar-expanded: 248px;
 }
 
 *,
@@ -41,96 +44,224 @@ body {
     overflow: hidden;
 }
 
-/* ── Icon rail ─────────────────────────────────────── */
-.rail {
-    width: 64px;
+/* ── Collapsible sidebar ───────────────────────────── */
+.sidebar {
+    width: var(--sidebar-collapsed);
     flex-shrink: 0;
-    background: var(--rail);
+    background: var(--sidebar-bg);
+    border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;
-    align-items: center;
-    padding: 18px 0;
-    gap: 22px;
+    padding: 14px 10px;
+    gap: 4px;
+    overflow: hidden;
+    transition: width .18s ease;
+    white-space: nowrap;
 }
 
-.rail-logo {
-    width: 30px;
-    height: 30px;
-    border-radius: 9px;
-    background: linear-gradient(135deg, #c9a84c, #e8c96d);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 15px;
-    box-shadow: 0 2px 14px rgba(201, 168, 76, 0.35);
-    margin-bottom: 4px;
+.sidebar.expanded {
+    width: var(--sidebar-expanded);
 }
 
-.rail-btn {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
+.sidebar-top {
     display: flex;
     align-items: center;
-    justify-content: center;
-    color: var(--text-secondary);
-    background: none;
+    gap: 10px;
+    padding: 6px 4px 14px;
+}
+
+.toggle-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
     border: none;
+    background: none;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
     cursor: pointer;
+    flex-shrink: 0;
     transition: background .15s ease, color .15s ease;
-    position: relative;
 }
 
-.rail-btn:hover {
-    background: var(--surface-hover);
+.toggle-btn:hover {
+    background: var(--sidebar-hover);
     color: var(--text-primary);
 }
 
-.rail-btn.active {
-    background: var(--surface);
-    color: var(--gold-light);
-}
-
-.rail-btn svg {
+.toggle-btn svg {
     width: 19px;
     height: 19px;
 }
 
-.rail-spacer {
+.logo-emblem {
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #c9a84c, #e8c96d);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    flex-shrink: 0;
+    box-shadow: 0 2px 12px rgba(201, 168, 76, 0.35);
+}
+
+.logo-label {
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: var(--gold-light);
+    opacity: 0;
+    transition: opacity .15s ease;
+}
+
+.sidebar.expanded .logo-label {
+    opacity: 1;
+}
+
+.nav-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 9px 10px;
+    border-radius: 8px;
+    border: none;
+    background: none;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background .15s ease, color .15s ease;
+    text-align: left;
+}
+
+.nav-item:hover {
+    background: var(--sidebar-hover);
+    color: var(--text-primary);
+}
+
+.nav-item.active {
+    background: var(--surface);
+    color: var(--gold-light);
+}
+
+.nav-item svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+}
+
+.nav-label {
+    opacity: 0;
+    transition: opacity .12s ease;
+}
+
+.sidebar.expanded .nav-label {
+    opacity: 1;
+}
+
+.areas-list {
+    display: none;
+    flex-direction: column;
+    gap: 1px;
+    margin-left: 6px;
+    padding-left: 22px;
+    border-left: 1px solid var(--border);
+}
+
+.sidebar.expanded .areas-list.open {
+    display: flex;
+}
+
+.area-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 10px;
+    border-radius: 7px;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background .15s ease, color .15s ease;
+    white-space: nowrap;
+}
+
+.area-item:hover {
+    background: var(--sidebar-hover);
+    color: var(--gold-light);
+}
+
+.sidebar-spacer {
     flex: 1;
 }
 
-.rail-flag {
-    display: flex;
+.sidebar-footer {
+    display: none;
     flex-direction: column;
-    gap: 3px;
-    width: 4px;
-    height: 22px;
+    gap: 10px;
+}
+
+.sidebar.expanded .sidebar-footer {
+    display: flex;
+}
+
+.disclaimer-box {
+    padding: 10px 12px;
+    background: rgba(32, 96, 61, 0.15);
+    border: 1px solid rgba(32, 96, 61, 0.3);
+    border-radius: var(--radius-md);
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    line-height: 1.55;
+    white-space: normal;
+}
+
+.disclaimer-box strong {
+    color: #4ade80;
+    display: block;
+    margin-bottom: 3px;
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.flag-stripe {
+    display: flex;
+    height: 3px;
     border-radius: 3px;
     overflow: hidden;
+    gap: 2px;
+    margin: 0 4px;
 }
 
-.rail-flag span {
+.flag-stripe span {
     flex: 1;
 }
 
-.rail-flag .f-blue {
+.flag-stripe .f-blue {
     background: var(--rw-blue);
 }
 
-.rail-flag .f-yellow {
+.flag-stripe .f-yellow {
     background: var(--rw-yellow);
 }
 
-.rail-flag .f-green {
+.flag-stripe .f-green {
     background: var(--rw-green);
 }
 
-/* Tooltip on rail buttons */
-.rail-btn[data-tip]:hover::after {
+/* Tooltips only make sense while collapsed */
+.nav-item[data-tip] {
+    position: relative;
+}
+
+.sidebar:not(.expanded) .nav-item[data-tip]:hover::after,
+.sidebar:not(.expanded) .toggle-btn[data-tip]:hover::after {
     content: attr(data-tip);
     position: absolute;
-    left: 52px;
+    left: 54px;
     top: 50%;
     transform: translateY(-50%);
     background: var(--surface-hover);
@@ -142,91 +273,6 @@ body {
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
     pointer-events: none;
     z-index: 30;
-}
-
-/* ── Legal-areas flyout panel ──────────────────────── */
-.areas-panel {
-    position: fixed;
-    left: 64px;
-    top: 0;
-    bottom: 0;
-    width: 260px;
-    background: var(--surface);
-    border-right: 1px solid var(--border);
-    padding: 24px 16px;
-    transform: translateX(-100%);
-    transition: transform .2s ease;
-    z-index: 20;
-    overflow-y: auto;
-}
-
-.areas-panel.open {
-    transform: translateX(0);
-}
-
-.areas-title {
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--text-muted);
-    margin-bottom: 14px;
-    padding-left: 4px;
-}
-
-.area-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    border-radius: var(--radius-md);
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: background .15s ease, color .15s ease;
-}
-
-.area-item:hover {
-    background: var(--surface-hover);
-    color: var(--gold-light);
-}
-
-.area-icon {
-    font-size: 15px;
-}
-
-.areas-disclaimer {
-    margin-top: 18px;
-    padding: 12px;
-    background: rgba(32, 96, 61, 0.15);
-    border: 1px solid rgba(32, 96, 61, 0.3);
-    border-radius: var(--radius-md);
-    font-size: 0.7rem;
-    color: var(--text-muted);
-    line-height: 1.6;
-}
-
-.areas-disclaimer strong {
-    color: #4ade80;
-    display: block;
-    margin-bottom: 4px;
-    font-size: 0.68rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-
-.scrim {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.3);
-    z-index: 15;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity .2s ease;
-}
-
-.scrim.show {
-    opacity: 1;
-    pointer-events: auto;
 }
 
 /* ── Main ──────────────────────────────────────────── */
@@ -633,21 +679,11 @@ body {
 
 /* ── Responsive ────────────────────────────────────── */
 @media (max-width: 768px) {
-    .rail {
-        width: 52px;
-    }
-
-    .rail-btn {
-        width: 36px;
-        height: 36px;
+    :root {
+        --sidebar-expanded: 220px;
     }
 
     .greeting {
         font-size: 1.6rem;
-    }
-
-    .areas-panel {
-        left: 52px;
-        width: 220px;
     }
 }
