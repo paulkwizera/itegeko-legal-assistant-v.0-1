@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Log in — Itegeko</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="auth-body">
+    <div class="auth-card">
+        <div class="auth-logo">
+            <div class="logo-emblem">⚖</div>
+            <div class="auth-title">Itegeko</div>
+        </div>
+        <p class="auth-sub">Log in to continue your legal research.</p>
+
+        {% if error %}<div class="auth-error">{{ error }}</div>{% endif %}
+
+        <form method="POST" class="auth-form">
+            <label>Email
+                <input type="email" name="email" required autofocus>
+            </label>
+            <label>Password
+                <input type="password" name="password" required>
+            </label>
+            <button type="submit" class="auth-submit">Log in</button>
+        </form>
+
+        <p class="auth-switch">Don't have an account? <a href="{{ url_for('auth.signup') }}">Sign up</a></p>
+    </div>
+</body>
+</html>

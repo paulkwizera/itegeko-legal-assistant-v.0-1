@@ -1,4 +1,7 @@
 flask
+gunicorn
 google-genai
 python-dotenv
-gunicorn
+pymongo
+dnspython
+pypdf

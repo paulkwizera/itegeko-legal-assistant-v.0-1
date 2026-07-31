@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gazette Documents — Itegeko Admin</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="admin-body">
+    <div class="admin-wrap">
+        <div class="admin-header">
+            <div class="admin-title">Gazette Documents</div>
+            <a href="{{ url_for('home') }}" class="admin-back">&larr; Back to Itegeko</a>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% for category, message in messages %}
+                <div class="admin-flash {{ 'admin-flash-error' if category == 'error' else 'admin-flash-success' }}">{{ message }}</div>
+            {% endfor %}
+        {% endwith %}
+
+        <div class="admin-card">
+            <div class="admin-card-title">Add or replace a document</div>
+            <p class="admin-hint">To <strong>add</strong> a new document, use a title that doesn't exist yet. To <strong>replace</strong> an existing one (new PDF, refreshed text), enter its exact existing title and switch mode to Update.</p>
+            <form method="POST" action="{{ url_for('admin.upload_document') }}" enctype="multipart/form-data" class="admin-form">
+                <label>Mode
+                    <select name="mode">
+                        <option value="create">Add new</option>
+                        <option value="update">Update existing (match by title)</option>
+                    </select>
+                </label>
+                <label>Title (exact match is used to find/replace existing entries)
+                    <input type="text" name="title" required placeholder="Law N 016/2018 of 13/04/2018 governing labour in Rwanda">
+                </label>
+                <label>Act number (optional)
+                    <input type="text" name="act_number" placeholder="016/2018">
+                </label>
+                <label>Category (optional)
+                    <input type="text" name="category" placeholder="labour">
+                </label>
+                <label>Tags (comma-separated, optional)
+                    <input type="text" name="tags" placeholder="labour, employment, contracts">
+                </label>
+                <label>PDF file
+                    <input type="file" name="pdf_file" accept="application/pdf" required>
+                </label>
+                <button type="submit" class="auth-submit">Upload</button>
+            </form>
+        </div>
+
+        <div class="admin-card">
+            <div class="admin-card-title">Currently in the database ({{ docs|length }})</div>
+            {% if docs %}
+            <table class="admin-table">
+                <thead>
+                    <tr><th>Title</th><th>Act</th><th>Category</th><th>Updated</th><th>File</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {% for d in docs %}
+                    <tr>
+                        <td>{{ d.title }}</td>
+                        <td>{{ d.act_number or '—' }}</td>
+                        <td>{{ d.category or '—' }}</td>
+                        <td>{{ d.updated_at.strftime('%Y-%m-%d %H:%M') if d.updated_at else '—' }}</td>
+                        <td>
+                            {% if d.pdf_file_id %}
+                            <a href="{{ url_for('admin.download_document', file_id=d.pdf_file_id) }}" class="admin-link">{{ d.pdf_filename or 'download' }}</a>
+                            {% else %}—{% endif %}
+                        </td>
+                        <td>
+                            <form method="POST" action="{{ url_for('admin.delete_document') }}" onsubmit="return confirm('Delete this document permanently?');" style="display:inline;">
+                                <input type="hidden" name="title" value="{{ d.title }}">
+                                <button type="submit" class="admin-delete-btn">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="admin-hint">No documents uploaded yet.</p>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

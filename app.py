@@ -1,16 +1,20 @@
 import os
-import sys
 import uuid
 import logging
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from google import genai
 from google.genai import types
 from google.genai.errors import APIError, ClientError, ServerError
 from dotenv import load_dotenv
+
+import db
+import gazette
+from auth import auth_bp, login_required
+from admin import admin_bp
 
 load_dotenv()
 
@@ -19,29 +23,27 @@ logger = logging.getLogger("itegeko")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(24))
+app.register_blueprint(auth_bp)
+app.register_blueprint(admin_bp)
 
 API_KEY = os.environ.get("GEMINI_API_KEY")
 
 client = genai.Client(api_key=API_KEY) if API_KEY else None
 if not API_KEY:
-    logger.warning("GEMINI_API_KEY environment variable not set. The chat UI will run, but AI responses will be unavailable until it is configured.")
+    logger.warning("GEMINI_API_KEY not set. The chat UI will run, but AI responses will be unavailable.")
 
 # ---------------------------------------------------------------------------
-# Model fallback chain.
-#
-# gemini-3.5-flash occasionally returns 503 UNAVAILABLE during demand spikes.
-# Rather than surface that to users, we keep a small ordered list of models
-# to fall back through. GEMINI_MODEL (if set) is tried first; a couple of
-# sensible backups follow it. A module-level pointer tracks the best
-# currently-working model so *new* sessions start there too, instead of
-# every new visitor re-discovering the same outage.
+# Model fallback chain (unchanged from before) -- see previous version's
+# comments if you're looking at this for the first time. Short version: if
+# the primary Gemini model returns a persistent 503 overload, we swap to the
+# next model in this list for the rest of that conversation.
 # ---------------------------------------------------------------------------
 _primary_model = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
 _backup_models = ["gemini-2.5-flash", "gemini-3.5-flash-lite"]
 FALLBACK_MODELS = [_primary_model] + [m for m in _backup_models if m != _primary_model]
 
 _active_model_lock = threading.Lock()
-_active_model_index = 0  # index into FALLBACK_MODELS of the best known-working model
+_active_model_index = 0
 
 
 def _get_active_model_index():
@@ -61,10 +63,17 @@ SYSTEM_INSTRUCTION = (
     "criminal law, civil law, family law, land law, commercial law, labor law, and the judicial "
     "system of Rwanda. Always cite the relevant Rwandan law, act, or article where applicable. "
     "Be precise, professional, and objective. Format answers in a clear structure with headings "
-    "and bullet points when helpful. If a question falls outside Rwandan law, politely clarify "
-    "that your expertise is limited to Rwandan legal matters. Always recommend consulting a "
-    "licensed Rwandan advocate for personal legal matters."
+    "and bullet points when helpful. Always recommend consulting a licensed Rwandan advocate for "
+    "personal legal matters. Each question below may come with its own instructions about how to "
+    "use (or not use) any gazette excerpts provided -- follow those instructions exactly."
 )
+
+# If true (the default -- you asked for this), Itegeko only answers from what's
+# actually been uploaded to the gazette collection, and says so plainly when
+# nothing matches, instead of falling back to its general training knowledge.
+# Set STRICT_GAZETTE_ONLY=false in the environment for a hybrid mode instead
+# (use gazette matches when found, general knowledge otherwise).
+STRICT_GAZETTE_ONLY = os.environ.get("STRICT_GAZETTE_ONLY", "true").lower() == "true"
 
 
 def _make_config():
@@ -80,61 +89,90 @@ def _create_chat(model_name, history=None):
 
 
 # ---------------------------------------------------------------------------
-# Per-session chat storage.
+# Conversation storage.
 #
-# Every visitor gets their own chat session (via a signed cookie) instead of
-# sharing one global thread. Each session entry also tracks which model in
-# FALLBACK_MODELS it's currently using, so a mid-conversation model swap
-# (see send_message_with_fallback) can rebuild the chat on a new model
-# without losing the conversation so far.
+# Source of truth for chat history is MongoDB (db.messages), scoped by
+# user_id + conversation_id -- that's what survives a restart and what
+# /chat/history reads from. The live Gemini `Chat` object itself can't be
+# serialized into Mongo, so we keep a small in-memory cache of *active*
+# chat objects keyed by conversation_id, and rebuild one from the persisted
+# Mongo history whenever it's missing (first message after a restart, after
+# a model swap, etc.) via `history=` on chats.create -- no extra API calls.
 # ---------------------------------------------------------------------------
-_sessions = {}  # session_id -> {"chat", "model_index", "last_used", "history"}
-SESSION_TTL = timedelta(hours=2)
-MAX_SESSIONS = 500  # simple cap so memory can't grow unbounded
+_active_chats = {}  # conversation_id -> {"chat", "model_index", "last_used"}
+ACTIVE_CHAT_TTL = timedelta(hours=2)
+MAX_ACTIVE_CHATS = 500
 
 RETRY_ATTEMPTS = 3
 RETRY_BACKOFF_SECONDS = [1, 2, 4]
 
 
-def _cleanup_sessions():
-    now = datetime.utcnow()
-    expired = [sid for sid, s in _sessions.items() if now - s["last_used"] > SESSION_TTL]
-    for sid in expired:
-        del _sessions[sid]
-    if len(_sessions) > MAX_SESSIONS:
-        by_age = sorted(_sessions.items(), key=lambda kv: kv[1]["last_used"])
-        for sid, _ in by_age[: len(_sessions) - MAX_SESSIONS]:
-            del _sessions[sid]
+def _cleanup_active_chats():
+    now = datetime.now(timezone.utc)
+    expired = [cid for cid, s in _active_chats.items() if now - s["last_used"] > ACTIVE_CHAT_TTL]
+    for cid in expired:
+        del _active_chats[cid]
+    if len(_active_chats) > MAX_ACTIVE_CHATS:
+        by_age = sorted(_active_chats.items(), key=lambda kv: kv[1]["last_used"])
+        for cid, _ in by_age[: len(_active_chats) - MAX_ACTIVE_CHATS]:
+            del _active_chats[cid]
 
 
-def get_chat_for_session():
-    _cleanup_sessions()
-    sid = session.get("sid")
-    if not sid:
-        sid = str(uuid.uuid4())
-        session["sid"] = sid
+def _load_history_from_db(user_id, conversation_id):
+    if db.messages is None:
+        return []
+    return list(
+        db.messages.find({"user_id": user_id, "conversation_id": conversation_id}).sort("created_at", 1)
+    )
 
-    entry = _sessions.get(sid)
+
+def _reconstruct_gemini_history(db_messages):
+    """Turn our stored {role, text} documents back into the Content objects
+    chats.create(history=...) expects, so a rebuilt chat has full context
+    without replaying every turn through the API again."""
+    history = []
+    for m in db_messages:
+        history.append(types.Content(role=m["role"], parts=[types.Part(text=m["text"])]))
+    return history
+
+
+def get_active_conversation():
+    """Returns the current user's active conversation entry, creating or
+    rebuilding it as needed. Requires session['user_id'] and
+    session['conversation_id'] to already be set (see login_required /
+    ensure_conversation)."""
+    _cleanup_active_chats()
+    conversation_id = session["conversation_id"]
+    entry = _active_chats.get(conversation_id)
+
     if entry is None:
         model_index = _get_active_model_index()
-        chat = _create_chat(FALLBACK_MODELS[model_index])
-        entry = {
-            "chat": chat,
-            "model_index": model_index,
-            "last_used": datetime.utcnow(),
-            "history": [],
-        }
-        _sessions[sid] = entry
+        db_messages = _load_history_from_db(session["user_id"], conversation_id)
+        history = _reconstruct_gemini_history(db_messages)
+        chat = _create_chat(FALLBACK_MODELS[model_index], history=history or None)
+        entry = {"chat": chat, "model_index": model_index, "last_used": datetime.now(timezone.utc)}
+        _active_chats[conversation_id] = entry
     else:
-        entry["last_used"] = datetime.utcnow()
+        entry["last_used"] = datetime.now(timezone.utc)
 
     return entry
 
 
-def get_history_for_session():
-    sid = session.get("sid")
-    entry = _sessions.get(sid) if sid else None
-    return entry["history"] if entry else []
+def ensure_conversation():
+    if "conversation_id" not in session:
+        session["conversation_id"] = str(uuid.uuid4())
+
+
+def _save_message(user_id, conversation_id, role, text):
+    if db.messages is None:
+        return
+    db.messages.insert_one({
+        "user_id": user_id,
+        "conversation_id": conversation_id,
+        "role": role,
+        "text": text,
+        "created_at": datetime.now(timezone.utc),
+    })
 
 
 def _is_overload_error(e):
@@ -142,84 +180,95 @@ def _is_overload_error(e):
     return "503" in message or "UNAVAILABLE" in message
 
 
-def _send_with_backoff(chat, user_message):
-    """Retry the same model a few times with backoff for a transient 503.
-    Any other error (or a 503 that persists through every retry) is raised
-    for the caller to handle -- e.g. by falling back to another model."""
+def _send_with_backoff(chat, message_text):
     last_error = None
     for attempt in range(RETRY_ATTEMPTS):
         try:
-            return chat.send_message(user_message)
+            return chat.send_message(message_text)
         except ServerError as e:
             last_error = e
             if not _is_overload_error(e) or attempt == RETRY_ATTEMPTS - 1:
                 raise
             delay = RETRY_BACKOFF_SECONDS[min(attempt, len(RETRY_BACKOFF_SECONDS) - 1)]
-            logger.warning(
-                "%s overloaded (attempt %d/%d), retrying in %ds",
-                chat._model if hasattr(chat, "_model") else "model",
-                attempt + 1, RETRY_ATTEMPTS, delay,
-            )
+            logger.warning("Model overloaded (attempt %d/%d), retrying in %ds", attempt + 1, RETRY_ATTEMPTS, delay)
             time.sleep(delay)
     raise last_error
 
 
-def send_message_with_fallback(entry, user_message):
-    """Try the session's current model with retries; if it's still
-    overloaded, permanently swap this session (and future new sessions) to
-    the next model in FALLBACK_MODELS, carrying the conversation history
-    over with no extra API calls, and try again. Only gives up once every
-    model in the chain has failed."""
+def send_message_with_fallback(entry, message_text):
     while True:
         try:
-            return _send_with_backoff(entry["chat"], user_message)
+            return _send_with_backoff(entry["chat"], message_text)
         except ServerError as e:
             if not _is_overload_error(e):
                 raise
-
             next_index = entry["model_index"] + 1
             if next_index >= len(FALLBACK_MODELS):
-                raise  # every model in the chain is overloaded right now
-
+                raise
             prior_history = entry["chat"].get_history()
             new_model = FALLBACK_MODELS[next_index]
-            logger.warning(
-                "%s still overloaded after retries -- switching this session to %s",
-                FALLBACK_MODELS[entry["model_index"]], new_model,
-            )
+            logger.warning("%s still overloaded -- switching to %s", FALLBACK_MODELS[entry["model_index"]], new_model)
             entry["chat"] = _create_chat(new_model, history=prior_history)
             entry["model_index"] = next_index
             _advance_active_model_index(next_index)
-            # loop again and try send_with_backoff on the new model
 
 
 @app.route("/")
+@login_required
 def home():
-    return render_template("index.html")
+    ensure_conversation()
+    return render_template("index.html", user_name=session.get("user_name", ""))
 
 
 @app.route("/chat", methods=["POST"])
+@login_required
 def chat_endpoint():
+    ensure_conversation()
     data = request.get_json(silent=True) or {}
     user_message = (data.get("message") or "").strip()
 
     if not user_message:
         return jsonify({"error": "Please enter a question before sending."}), 400
-
     if len(user_message) > 4000:
         return jsonify({"error": "That message is too long (4000 character limit)."}), 400
-
     if client is None:
         return jsonify({"error": "The AI service is not configured yet. Please set GEMINI_API_KEY to enable responses."}), 503
 
-    entry = get_chat_for_session()
+    user_id = session["user_id"]
+    conversation_id = session["conversation_id"]
+    entry = get_active_conversation()
+
+    # Ground the model in whatever's in the gazette collection, if anything
+    # matches -- this is invisible to the user and to the stored history;
+    # only the plain question gets saved and shown.
+    grounding = gazette.build_grounding_context(user_message)
+    if grounding:
+        if STRICT_GAZETTE_ONLY:
+            instruction = (
+                "Answer using ONLY the gazette excerpts above. Cite the specific act/title. "
+                "If the excerpts don't fully answer the question, say plainly what's missing "
+                "rather than filling the gap from general knowledge."
+            )
+        else:
+            instruction = (
+                "Use the gazette excerpts above as primary grounding and cite them directly; "
+                "you may supplement with general knowledge only where they don't cover the question."
+            )
+        message_to_send = f"{grounding}\n\n{instruction}\n\nQuestion: {user_message}"
+    elif STRICT_GAZETTE_ONLY:
+        message_to_send = (
+            "No matching Official Gazette document was found in the database for this question. "
+            "Reply that you don't have an official document on file covering this yet, and don't "
+            f"answer from general knowledge. Question: {user_message}"
+        )
+    else:
+        message_to_send = user_message
 
     try:
-        response = send_message_with_fallback(entry, user_message)
+        response = send_message_with_fallback(entry, message_to_send)
         reply_text = response.text
-        now = datetime.utcnow().strftime("%H:%M")
-        entry["history"].append({"role": "user", "text": user_message, "time": now})
-        entry["history"].append({"role": "assistant", "text": reply_text, "time": now})
+        _save_message(user_id, conversation_id, "user", user_message)
+        _save_message(user_id, conversation_id, "model", reply_text)
         return jsonify({"response": reply_text})
 
     except ClientError as e:
@@ -235,12 +284,8 @@ def chat_endpoint():
                     "minute and try again, or check your Google AI Studio quota/billing."
                 )
             }), 429
-
         if status == 400 or "API key not valid" in message:
-            return jsonify({
-                "error": "There's a configuration problem with the API key. Please contact the site administrator."
-            }), 400
-
+            return jsonify({"error": "There's a configuration problem with the API key. Please contact the site administrator."}), 400
         return jsonify({"error": "The legal assistant service returned an error. Please try again."}), 502
 
     except ServerError as e:
@@ -254,22 +299,30 @@ def chat_endpoint():
         logger.error("Gemini APIError: %s", e)
         return jsonify({"error": "The legal assistant is temporarily unavailable. Please try again shortly."}), 503
 
-    except Exception as e:
+    except Exception:
         logger.exception("Unexpected error in /chat")
         return jsonify({"error": "Something went wrong on our end. Please try again."}), 500
 
 
 @app.route("/chat/history", methods=["GET"])
+@login_required
 def chat_history():
-    return jsonify({"history": get_history_for_session()})
+    ensure_conversation()
+    db_messages = _load_history_from_db(session["user_id"], session["conversation_id"])
+    history = [
+        {"role": "user" if m["role"] == "user" else "assistant", "text": m["text"], "time": m["created_at"].strftime("%H:%M")}
+        for m in db_messages
+    ]
+    return jsonify({"history": history})
 
 
 @app.route("/chat/new", methods=["POST"])
+@login_required
 def new_chat():
-    sid = session.get("sid")
-    if sid and sid in _sessions:
-        del _sessions[sid]
-    session.pop("sid", None)
+    old_conversation_id = session.get("conversation_id")
+    if old_conversation_id and old_conversation_id in _active_chats:
+        del _active_chats[old_conversation_id]
+    session["conversation_id"] = str(uuid.uuid4())
     return jsonify({"ok": True})
 
 
@@ -277,10 +330,12 @@ def new_chat():
 def health():
     return jsonify({
         "status": "ok",
-        "configured": client is not None,
+        "gemini_configured": client is not None,
+        "db_configured": db.db is not None,
+        "strict_gazette_only": STRICT_GAZETTE_ONLY,
         "fallback_chain": FALLBACK_MODELS,
         "active_model": FALLBACK_MODELS[_get_active_model_index()],
-        "active_sessions": len(_sessions),
+        "active_chats": len(_active_chats),
     })
 
 
