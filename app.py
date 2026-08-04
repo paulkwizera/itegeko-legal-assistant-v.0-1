@@ -10,9 +10,13 @@ from google import genai
 from google.genai import types
 from google.genai.errors import APIError, ClientError, ServerError
 from dotenv import load_dotenv
+from bson import ObjectId
+from bson.errors import InvalidId
 
 import db
 import gazette
+import plans
+import payments
 from auth import auth_bp, login_required
 from admin import admin_bp
 
@@ -136,18 +140,18 @@ def _reconstruct_gemini_history(db_messages):
     return history
 
 
-def get_active_conversation():
-    """Returns the current user's active conversation entry, creating or
-    rebuilding it as needed. Requires session['user_id'] and
-    session['conversation_id'] to already be set (see login_required /
-    ensure_conversation)."""
+def get_active_conversation(storage_user_id):
+    """Returns the active conversation entry for storage_user_id, creating or
+    rebuilding it as needed. Requires session['conversation_id'] to already
+    be set (see ensure_conversation). storage_user_id is either a Mongo user
+    _id string (logged-in) or "guest:<uuid>" (anonymous)."""
     _cleanup_active_chats()
     conversation_id = session["conversation_id"]
     entry = _active_chats.get(conversation_id)
 
     if entry is None:
         model_index = _get_active_model_index()
-        db_messages = _load_history_from_db(session["user_id"], conversation_id)
+        db_messages = _load_history_from_db(storage_user_id, conversation_id)
         history = _reconstruct_gemini_history(db_messages)
         chat = _create_chat(FALLBACK_MODELS[model_index], history=history or None)
         entry = {"chat": chat, "model_index": model_index, "last_used": datetime.now(timezone.utc)}
@@ -161,6 +165,21 @@ def get_active_conversation():
 def ensure_conversation():
     if "conversation_id" not in session:
         session["conversation_id"] = str(uuid.uuid4())
+
+
+def current_identity():
+    """Returns (storage_user_id, is_guest). Logged-in users get their Mongo
+    _id string; anonymous visitors get a per-browser-session guest id that
+    lets them chat -- and keep chat history -- without an account, right up
+    until they sign up (at which point that history is claimed by the new
+    account, see auth._claim_guest_history)."""
+    if session.get("user_id"):
+        return session["user_id"], False
+    if "guest_id" not in session:
+        session["guest_id"] = str(uuid.uuid4())
+        session["guest_count"] = 0
+        session["guest_prompt_shown"] = False
+    return f"guest:{session['guest_id']}", True
 
 
 def _save_message(user_id, conversation_id, role, text):
@@ -214,14 +233,20 @@ def send_message_with_fallback(entry, message_text):
 
 
 @app.route("/")
-@login_required
 def home():
     ensure_conversation()
-    return render_template("index.html", user_name=session.get("user_name", ""))
+    storage_user_id, is_guest = current_identity()
+    plan = "free" if is_guest else plans.get_plan(storage_user_id)
+    return render_template(
+        "index.html",
+        user_name=session.get("user_name", ""),
+        is_guest=is_guest,
+        plan=plan,
+        is_admin=bool(session.get("is_admin")),
+    )
 
 
 @app.route("/chat", methods=["POST"])
-@login_required
 def chat_endpoint():
     ensure_conversation()
     data = request.get_json(silent=True) or {}
@@ -234,9 +259,30 @@ def chat_endpoint():
     if client is None:
         return jsonify({"error": "The AI service is not configured yet. Please set GEMINI_API_KEY to enable responses."}), 503
 
-    user_id = session["user_id"]
+    user_id, is_guest = current_identity()
     conversation_id = session["conversation_id"]
-    entry = get_active_conversation()
+
+    # Usage limits: guests get a soft popup at GUEST_POPUP_AFTER and a hard
+    # stop at GUEST_MESSAGE_LIMIT; logged-in Free/Pro accounts get a daily cap.
+    if is_guest:
+        if session.get("guest_count", 0) >= plans.GUEST_MESSAGE_LIMIT:
+            return jsonify({
+                "error": "You've reached today's guest limit. Create a free account to keep chatting and save your history.",
+                "limit_reached": True,
+                "signup_url": url_for("auth.signup"),
+            }), 403
+    elif not session.get("is_admin"):
+        user_plan = plans.get_plan(user_id)
+        limit = plans.daily_limit_for(user_plan)
+        if plans.messages_used_today(user_id) >= limit:
+            return jsonify({
+                "error": f"You've reached today's {user_plan.capitalize()} plan limit ({limit} messages)."
+                         + ("" if user_plan == "pro" else " Upgrade to Itegeko Pro for a much higher daily limit."),
+                "limit_reached": True,
+                "upgrade_url": url_for("pricing"),
+            }), 403
+
+    entry = get_active_conversation(user_id)
 
     # Ground the model in whatever's in the gazette collection, if anything
     # matches -- this is invisible to the user and to the stored history;
@@ -269,7 +315,15 @@ def chat_endpoint():
         reply_text = response.text
         _save_message(user_id, conversation_id, "user", user_message)
         _save_message(user_id, conversation_id, "model", reply_text)
-        return jsonify({"response": reply_text})
+
+        extra = {}
+        if is_guest:
+            session["guest_count"] = session.get("guest_count", 0) + 1
+            if session["guest_count"] >= plans.GUEST_POPUP_AFTER and not session.get("guest_prompt_shown"):
+                session["guest_prompt_shown"] = True
+                extra["show_signup_prompt"] = True
+
+        return jsonify({"response": reply_text, **extra})
 
     except ClientError as e:
         status = getattr(e, "code", None) or getattr(e, "status_code", None)
@@ -305,10 +359,10 @@ def chat_endpoint():
 
 
 @app.route("/chat/history", methods=["GET"])
-@login_required
 def chat_history():
     ensure_conversation()
-    db_messages = _load_history_from_db(session["user_id"], session["conversation_id"])
+    user_id, _ = current_identity()
+    db_messages = _load_history_from_db(user_id, session["conversation_id"])
     history = [
         {"role": "user" if m["role"] == "user" else "assistant", "text": m["text"], "time": m["created_at"].strftime("%H:%M")}
         for m in db_messages
@@ -317,13 +371,104 @@ def chat_history():
 
 
 @app.route("/chat/new", methods=["POST"])
-@login_required
 def new_chat():
     old_conversation_id = session.get("conversation_id")
     if old_conversation_id and old_conversation_id in _active_chats:
         del _active_chats[old_conversation_id]
     session["conversation_id"] = str(uuid.uuid4())
     return jsonify({"ok": True})
+
+
+@app.route("/pricing")
+def pricing():
+    is_guest = not bool(session.get("user_id"))
+    plan = "free" if is_guest else plans.get_plan(session["user_id"])
+    return render_template(
+        "pricing.html",
+        logged_in=not is_guest,
+        plan=plan,
+        free_limit=plans.FREE_PLAN_DAILY_LIMIT,
+        pro_limit=plans.PRO_PLAN_DAILY_LIMIT,
+        price_label=payments.PRO_PRICE_LABEL,
+        payments_configured=payments.is_configured(),
+    )
+
+
+@app.route("/upgrade", methods=["POST"])
+@login_required
+def upgrade():
+    if not payments.is_configured():
+        return render_template("pricing.html", logged_in=True, plan="free",
+                                free_limit=plans.FREE_PLAN_DAILY_LIMIT, pro_limit=plans.PRO_PLAN_DAILY_LIMIT,
+                                price_label=payments.PRO_PRICE_LABEL, payments_configured=False,
+                                error="Payments aren't configured yet. Please contact the site administrator.")
+
+    if db.users is None:
+        return redirect(url_for("pricing"))
+
+    try:
+        user = db.users.find_one({"_id": ObjectId(session["user_id"])})
+    except InvalidId:
+        return redirect(url_for("pricing"))
+    if not user:
+        return redirect(url_for("auth.login"))
+
+    try:
+        checkout = payments.create_checkout(user, url_for("payment_callback", _external=True))
+    except Exception:
+        logger.exception("Failed to create Flutterwave checkout")
+        return render_template("pricing.html", logged_in=True, plan="free",
+                                free_limit=plans.FREE_PLAN_DAILY_LIMIT, pro_limit=plans.PRO_PLAN_DAILY_LIMIT,
+                                price_label=payments.PRO_PRICE_LABEL, payments_configured=True,
+                                error="Couldn't start checkout. Please try again shortly.")
+
+    if db.payments is not None:
+        db.payments.insert_one({
+            "user_id": session["user_id"],
+            "tx_ref": checkout["tx_ref"],
+            "status": "pending",
+            "created_at": datetime.now(timezone.utc),
+        })
+
+    return redirect(checkout["checkout_url"])
+
+
+@app.route("/payment/callback")
+@login_required
+def payment_callback():
+    status = request.args.get("status")
+    transaction_id = request.args.get("transaction_id")
+    tx_ref = request.args.get("tx_ref")
+
+    def render_pricing(**kwargs):
+        plan = plans.get_plan(session["user_id"])
+        return render_template("pricing.html", logged_in=True, plan=plan,
+                                free_limit=plans.FREE_PLAN_DAILY_LIMIT, pro_limit=plans.PRO_PLAN_DAILY_LIMIT,
+                                price_label=payments.PRO_PRICE_LABEL, payments_configured=payments.is_configured(),
+                                **kwargs)
+
+    if status != "successful" or not transaction_id:
+        return render_pricing(error="Payment was not completed.")
+
+    try:
+        ok, tx = payments.verify_transaction(transaction_id)
+    except Exception:
+        logger.exception("Flutterwave verification request failed")
+        return render_pricing(error="We couldn't verify that payment right now. If you were charged, contact support.")
+
+    if not ok:
+        return render_pricing(error="We couldn't verify that payment. If you were charged, contact support.")
+
+    pro_until = datetime.now(timezone.utc) + timedelta(days=payments.SUBSCRIPTION_DAYS)
+    if db.users is not None:
+        db.users.update_one({"_id": ObjectId(session["user_id"])}, {"$set": {"plan": "pro", "pro_until": pro_until}})
+    if db.payments is not None and tx_ref:
+        db.payments.update_one(
+            {"tx_ref": tx_ref},
+            {"$set": {"status": "successful", "verified_at": datetime.now(timezone.utc), "flw_transaction_id": transaction_id}},
+        )
+    session["plan"] = "pro"
+    return render_pricing(success="Payment successful — you're now on Itegeko Pro!")
 
 
 @app.route("/health")
