@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome — Itegeko</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ asset_version('css/style.css') }}">
+</head>
+<body class="auth-body">
+    <div class="auth-card onboarding-card">
+        <div class="auth-logo">
+            <div class="logo-emblem">⚖</div>
+            <div class="auth-title">Welcome to Itegeko</div>
+        </div>
+        <p class="auth-sub">Help us tailor your experience. This is optional — you can skip it.</p>
+
+        <form method="POST" class="auth-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label>What best describes you? <span class="field-optional">(optional)</span>
+                <select name="role">
+                    <option value="">— Select —</option>
+                    {% for role in roles %}
+                    <option value="{{ role }}">{{ role }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+
+            <label>What brought you to Itegeko? <span class="field-optional">(optional)</span>
+                <textarea name="reason" rows="3" maxlength="500" placeholder="e.g. I need help understanding land ownership rights…"></textarea>
+            </label>
+
+            <fieldset class="interests-fieldset">
+                <legend>Legal areas you're interested in <span class="field-optional">(optional)</span></legend>
+                <div class="interests-grid">
+                    {% for area in areas %}
+                    <label class="interest-chip">
+                        <input type="checkbox" name="interests" value="{{ area }}">
+                        {{ area }}
+                    </label>
+                    {% endfor %}
+                </div>
+            </fieldset>
+
+            <div class="onboarding-actions">
+                <button type="submit" name="skip" value="1" class="auth-secondary">Skip</button>
+                <button type="submit" class="auth-submit">Continue</button>
+            </div>
+        </form>
+    </div>
+</body>
+</html>

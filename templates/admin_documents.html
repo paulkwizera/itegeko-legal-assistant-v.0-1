@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gazette Documents — Itegeko Admin</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ asset_version('css/style.css') }}">
 </head>
 <body class="admin-body">
     <div class="admin-wrap">
@@ -24,6 +25,7 @@
             <div class="admin-card-title">Add or replace a document</div>
             <p class="admin-hint">To <strong>add</strong> a new document, use a title that doesn't exist yet. To <strong>replace</strong> an existing one (new PDF, refreshed text), enter its exact existing title and switch mode to Update.</p>
             <form method="POST" action="{{ url_for('admin.upload_document') }}" enctype="multipart/form-data" class="admin-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <label>Mode
                     <select name="mode">
                         <option value="create">Add new</option>
@@ -69,7 +71,8 @@
                             {% else %}—{% endif %}
                         </td>
                         <td>
-                            <form method="POST" action="{{ url_for('admin.delete_document') }}" onsubmit="return confirm('Delete this document permanently?');" style="display:inline;">
+                            <form method="POST" action="{{ url_for('admin.delete_document') }}" onsubmit="return confirm('Delete this document permanently?');" class="admin-inline-form">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <input type="hidden" name="title" value="{{ d.title }}">
                                 <button type="submit" class="admin-delete-btn">Delete</button>
                             </form>

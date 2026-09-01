@@ -1,15 +1,25 @@
 import os
 import uuid
+import json
 import logging
 import threading
 import time
 from datetime import datetime, timezone, timedelta
 
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from dotenv import load_dotenv
+
+# Must run before any local module import (db, gazette, payments, auth_email)
+# -- several of them read os.environ at import time (MONGODB_URI, SMTP_*,
+# etc.), so loading .env after importing them silently leaves those values
+# unset for local development. In production this was masked because
+# Render injects real env vars before the process starts at all, so only
+# .env-based local dev ever hit it.
+load_dotenv()
+
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, Response, stream_with_context
 from google import genai
 from google.genai import types
 from google.genai.errors import APIError, ClientError, ServerError
-from dotenv import load_dotenv
 from bson import ObjectId
 from bson.errors import InvalidId
 
@@ -17,18 +27,65 @@ import db
 import gazette
 import plans
 import payments
+from extensions import csrf, limiter
 from auth import auth_bp, login_required
+from auth_email import email_bp
+from account import account_bp
 from admin import admin_bp
-
-load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("itegeko")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(24))
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = os.environ.get("FLASK_ENV") == "production"
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
+app.config["WTF_CSRF_TIME_LIMIT"] = 3600  # 1-hour CSRF token validity
+
+csrf.init_app(app)     # protects every plain HTML <form> POST; JSON-only
+                       # endpoints below opt out explicitly with @csrf.exempt
+limiter.init_app(app)  # in-memory, single-process rate limiting
+
 app.register_blueprint(auth_bp)
+app.register_blueprint(email_bp)
+app.register_blueprint(account_bp)
 app.register_blueprint(admin_bp)
+
+
+@app.after_request
+def set_security_headers(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    # Cache static assets for a year -- safe because asset_version() below
+    # busts the cache with a ?v= query string whenever the file changes.
+    if request.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return response
+
+
+_asset_version_cache = {}
+
+
+def asset_version(rel_path):
+    """Returns the file's mtime (as an int) for use as a cache-busting
+    query string, e.g. style.css?v=1735689600 -- so browsers/CDNs can
+    cache static assets aggressively without ever serving a stale one
+    after a deploy. Cached in-process so this doesn't re-stat on every
+    request; safe because static files don't change while the app runs."""
+    if rel_path not in _asset_version_cache:
+        full_path = os.path.join(app.static_folder, rel_path)
+        try:
+            _asset_version_cache[rel_path] = int(os.path.getmtime(full_path))
+        except OSError:
+            _asset_version_cache[rel_path] = 0
+    return _asset_version_cache[rel_path]
+
+
+app.jinja_env.globals["asset_version"] = asset_version
 
 API_KEY = os.environ.get("GEMINI_API_KEY")
 
@@ -192,6 +249,26 @@ def _save_message(user_id, conversation_id, role, text):
         "text": text,
         "created_at": datetime.now(timezone.utc),
     })
+    # Create or update the conversation document
+    if db.conversations is not None and role == "user":
+        now = datetime.now(timezone.utc)
+        existing = db.conversations.find_one({"conversation_id": conversation_id, "user_id": user_id})
+        if not existing:
+            title = text[:60].strip()
+            if len(text) > 60:
+                title = title.rsplit(" ", 1)[0] + "…"
+            db.conversations.insert_one({
+                "user_id": user_id,
+                "conversation_id": conversation_id,
+                "title": title,
+                "created_at": now,
+                "updated_at": now,
+            })
+        else:
+            db.conversations.update_one(
+                {"_id": existing["_id"]},
+                {"$set": {"updated_at": now}},
+            )
 
 
 def _is_overload_error(e):
@@ -240,13 +317,17 @@ def home():
     return render_template(
         "index.html",
         user_name=session.get("user_name", ""),
+        user_email=session.get("user_email", ""),
         is_guest=is_guest,
         plan=plan,
         is_admin=bool(session.get("is_admin")),
+        guest_popup_after=plans.GUEST_POPUP_AFTER,
     )
 
 
 @app.route("/chat", methods=["POST"])
+@csrf.exempt
+@limiter.limit("30 per minute")
 def chat_endpoint():
     ensure_conversation()
     data = request.get_json(silent=True) or {}
@@ -273,42 +354,27 @@ def chat_endpoint():
             }), 403
     elif not session.get("is_admin"):
         user_plan = plans.get_plan(user_id)
-        limit = plans.daily_limit_for(user_plan)
-        if plans.messages_used_today(user_id) >= limit:
+        daily_limit = plans.daily_limit_for(user_plan)
+        weekly_limit = plans.weekly_limit_for(user_plan)
+        if plans.messages_used_today(user_id) >= daily_limit:
             return jsonify({
-                "error": f"You've reached today's {user_plan.capitalize()} plan limit ({limit} messages)."
-                         + ("" if user_plan == "pro" else " Upgrade to Itegeko Pro for a much higher daily limit."),
+                "error": "You've reached today's free prompt limit."
+                         + ("" if user_plan == "pro" else " Upgrade to Itegeko Pro for unlimited prompts."),
                 "limit_reached": True,
+                "limit_type": "daily",
+                "upgrade_url": url_for("pricing"),
+            }), 403
+        if plans.messages_used_this_week(user_id) >= weekly_limit:
+            return jsonify({
+                "error": "You've reached your weekly free limit."
+                         + ("" if user_plan == "pro" else " Upgrade to Itegeko Pro for unlimited prompts."),
+                "limit_reached": True,
+                "limit_type": "weekly",
                 "upgrade_url": url_for("pricing"),
             }), 403
 
     entry = get_active_conversation(user_id)
-
-    # Ground the model in whatever's in the gazette collection, if anything
-    # matches -- this is invisible to the user and to the stored history;
-    # only the plain question gets saved and shown.
-    grounding = gazette.build_grounding_context(user_message)
-    if grounding:
-        if STRICT_GAZETTE_ONLY:
-            instruction = (
-                "Answer using ONLY the gazette excerpts above. Cite the specific act/title. "
-                "If the excerpts don't fully answer the question, say plainly what's missing "
-                "rather than filling the gap from general knowledge."
-            )
-        else:
-            instruction = (
-                "Use the gazette excerpts above as primary grounding and cite them directly; "
-                "you may supplement with general knowledge only where they don't cover the question."
-            )
-        message_to_send = f"{grounding}\n\n{instruction}\n\nQuestion: {user_message}"
-    elif STRICT_GAZETTE_ONLY:
-        message_to_send = (
-            "No matching Official Gazette document was found in the database for this question. "
-            "Reply that you don't have an official document on file covering this yet, and don't "
-            f"answer from general knowledge. Question: {user_message}"
-        )
-    else:
-        message_to_send = user_message
+    message_to_send, sources = _build_grounded_message(user_message)
 
     try:
         response = send_message_with_fallback(entry, message_to_send)
@@ -323,7 +389,7 @@ def chat_endpoint():
                 session["guest_prompt_shown"] = True
                 extra["show_signup_prompt"] = True
 
-        return jsonify({"response": reply_text, **extra})
+        return jsonify({"response": reply_text, "sources": sources, "conversation_id": conversation_id, **extra})
 
     except ClientError as e:
         status = getattr(e, "code", None) or getattr(e, "status_code", None)
@@ -358,6 +424,106 @@ def chat_endpoint():
         return jsonify({"error": "Something went wrong on our end. Please try again."}), 500
 
 
+def _build_grounded_message(user_message):
+    """Build the actual prompt sent to Gemini, including gazette grounding.
+    Returns (message_to_send, sources) where sources is a list of
+    {"title", "act_number"} dicts for whatever gazette entries were used --
+    surfaced back to the client so every grounded answer can show its
+    source documents explicitly, not just rely on the model mentioning
+    them in prose."""
+    grounding, sources = gazette.search_and_ground(user_message, limit=3)
+
+    if grounding:
+        if STRICT_GAZETTE_ONLY:
+            instruction = (
+                "Answer using ONLY the gazette excerpts above. Cite the specific act/title. "
+                "If the excerpts don't fully answer the question, say plainly what's missing "
+                "rather than filling the gap from general knowledge."
+            )
+        else:
+            instruction = (
+                "Use the gazette excerpts above as primary grounding and cite them directly; "
+                "you may supplement with general knowledge only where they don't cover the question."
+            )
+        return f"{grounding}\n\n{instruction}\n\nQuestion: {user_message}", sources
+    elif STRICT_GAZETTE_ONLY:
+        return (
+            "No matching Official Gazette document was found in the database for this question. "
+            "Reply that you don't have an official document on file covering this yet, and don't "
+            f"answer from general knowledge. Question: {user_message}"
+        ), sources
+    else:
+        return user_message, sources
+
+
+@app.route("/chat/stream", methods=["POST"])
+@csrf.exempt
+@limiter.limit("30 per minute")
+def chat_stream_endpoint():
+    """SSE streaming version of /chat. Sends tokens as they arrive from Gemini."""
+    ensure_conversation()
+    data = request.get_json(silent=True) or {}
+    user_message = (data.get("message") or "").strip()
+
+    if not user_message:
+        return jsonify({"error": "Please enter a question before sending."}), 400
+    if len(user_message) > 4000:
+        return jsonify({"error": "That message is too long (4000 character limit)."}), 400
+    if client is None:
+        return jsonify({"error": "The AI service is not configured yet."}), 503
+
+    user_id, is_guest = current_identity()
+    conversation_id = session["conversation_id"]
+
+    # Check limits (same as /chat)
+    if is_guest:
+        if session.get("guest_count", 0) >= plans.GUEST_MESSAGE_LIMIT:
+            return jsonify({"error": "You've reached today's guest limit.", "limit_reached": True}), 403
+    elif not session.get("is_admin"):
+        user_plan = plans.get_plan(user_id)
+        if plans.messages_used_today(user_id) >= plans.daily_limit_for(user_plan):
+            return jsonify({"error": "You've reached today's free prompt limit.", "limit_reached": True, "limit_type": "daily", "upgrade_url": url_for("pricing")}), 403
+        if plans.messages_used_this_week(user_id) >= plans.weekly_limit_for(user_plan):
+            return jsonify({"error": "You've reached your weekly free limit.", "limit_reached": True, "limit_type": "weekly", "upgrade_url": url_for("pricing")}), 403
+
+    entry = get_active_conversation(user_id)
+    message_to_send, sources = _build_grounded_message(user_message)
+
+    def generate():
+        full_reply = []
+        try:
+            chat = entry["chat"]
+            for chunk in chat.send_message_stream(message_to_send):
+                token = chunk.text
+                if token:
+                    full_reply.append(token)
+                    yield f"data: {json.dumps({'token': token})}\n\n"
+
+            reply_text = "".join(full_reply)
+            _save_message(user_id, conversation_id, "user", user_message)
+            _save_message(user_id, conversation_id, "model", reply_text)
+
+            # Guest prompt tracking
+            extra = {}
+            if is_guest:
+                session["guest_count"] = session.get("guest_count", 0) + 1
+                if session["guest_count"] >= plans.GUEST_POPUP_AFTER and not session.get("guest_prompt_shown"):
+                    session["guest_prompt_shown"] = True
+                    extra["show_signup_prompt"] = True
+
+            yield f"data: {json.dumps({'done': True, 'sources': sources, 'conversation_id': conversation_id, **extra})}\n\n"
+
+        except (ClientError, ServerError, APIError) as e:
+            logger.error("Streaming error: %s", e)
+            yield f"data: {json.dumps({'error': 'The AI service encountered an error. Please try again.'})}\n\n"
+        except Exception:
+            logger.exception("Unexpected streaming error")
+            yield f"data: {json.dumps({'error': 'Something went wrong. Please try again.'})}\n\n"
+
+    return Response(stream_with_context(generate()), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 @app.route("/chat/history", methods=["GET"])
 def chat_history():
     ensure_conversation()
@@ -367,15 +533,133 @@ def chat_history():
         {"role": "user" if m["role"] == "user" else "assistant", "text": m["text"], "time": m["created_at"].strftime("%H:%M")}
         for m in db_messages
     ]
-    return jsonify({"history": history})
+    return jsonify({"history": history, "conversation_id": session["conversation_id"]})
+
+
+@app.route("/api/usage", methods=["GET"])
+def api_usage():
+    """Return current usage stats for the dashboard."""
+    user_id, is_guest = current_identity()
+    if is_guest:
+        guest_count = session.get("guest_count", 0)
+        return jsonify({
+            "plan": "guest",
+            "daily_used": guest_count,
+            "daily_limit": plans.GUEST_MESSAGE_LIMIT,
+            "weekly_used": guest_count,
+            "weekly_limit": plans.GUEST_MESSAGE_LIMIT,
+        })
+    user_plan = plans.get_plan(user_id)
+    return jsonify({
+        "plan": user_plan,
+        "daily_used": plans.messages_used_today(user_id),
+        "daily_limit": plans.daily_limit_for(user_plan),
+        "weekly_used": plans.messages_used_this_week(user_id),
+        "weekly_limit": plans.weekly_limit_for(user_plan),
+    })
 
 
 @app.route("/chat/new", methods=["POST"])
+@csrf.exempt
 def new_chat():
     old_conversation_id = session.get("conversation_id")
     if old_conversation_id and old_conversation_id in _active_chats:
         del _active_chats[old_conversation_id]
     session["conversation_id"] = str(uuid.uuid4())
+    return jsonify({"ok": True, "conversation_id": session["conversation_id"]})
+
+
+@app.route("/api/conversations", methods=["GET"])
+def api_conversations():
+    """List the user's conversation history, most recent first."""
+    user_id, is_guest = current_identity()
+    if db.conversations is None:
+        return jsonify({"conversations": []})
+    convos = list(
+        db.conversations.find(
+            {"user_id": user_id},
+            {"conversation_id": 1, "title": 1, "updated_at": 1, "_id": 0},
+        )
+        .sort("updated_at", -1)
+        .limit(50)
+    )
+    for c in convos:
+        if c.get("updated_at"):
+            c["updated_at"] = c["updated_at"].isoformat()
+    return jsonify({"conversations": convos})
+
+
+@app.route("/api/conversations/<conversation_id>/rename", methods=["POST"])
+@csrf.exempt
+def rename_conversation(conversation_id):
+    user_id, _ = current_identity()
+    data = request.get_json(silent=True) or {}
+    new_title = (data.get("title") or "").strip()[:100]
+    if not new_title:
+        return jsonify({"error": "Title is required."}), 400
+    if db.conversations is not None:
+        result = db.conversations.update_one(
+            {"conversation_id": conversation_id, "user_id": user_id},
+            {"$set": {"title": new_title}},
+        )
+        if result.matched_count == 0:
+            return jsonify({"error": "Conversation not found."}), 404
+    return jsonify({"ok": True})
+
+
+@app.route("/api/conversations/<conversation_id>/delete", methods=["POST"])
+@csrf.exempt
+def delete_conversation(conversation_id):
+    user_id, _ = current_identity()
+    if db.conversations is not None:
+        db.conversations.delete_one({"conversation_id": conversation_id, "user_id": user_id})
+    if db.messages is not None:
+        db.messages.delete_many({"conversation_id": conversation_id, "user_id": user_id})
+    if conversation_id in _active_chats:
+        del _active_chats[conversation_id]
+    # If we just deleted the active conversation, start a fresh one
+    if session.get("conversation_id") == conversation_id:
+        session["conversation_id"] = str(uuid.uuid4())
+    return jsonify({"ok": True})
+
+
+@app.route("/api/conversations/search", methods=["GET"])
+def search_conversations():
+    user_id, _ = current_identity()
+    query = (request.args.get("q") or "").strip()
+    if not query or db.conversations is None:
+        return jsonify({"conversations": []})
+    import re
+    safe_query = re.escape(query)
+    convos = list(
+        db.conversations.find(
+            {"user_id": user_id, "title": {"$regex": safe_query, "$options": "i"}},
+            {"conversation_id": 1, "title": 1, "updated_at": 1, "_id": 0},
+        )
+        .sort("updated_at", -1)
+        .limit(20)
+    )
+    for c in convos:
+        if c.get("updated_at"):
+            c["updated_at"] = c["updated_at"].isoformat()
+    return jsonify({"conversations": convos})
+
+
+@app.route("/chat/load/<conversation_id>", methods=["POST"])
+@csrf.exempt
+def load_conversation(conversation_id):
+    """Switch to an existing conversation."""
+    user_id, _ = current_identity()
+    # Verify the conversation belongs to this user
+    if db.conversations is not None:
+        convo = db.conversations.find_one({"conversation_id": conversation_id, "user_id": user_id})
+        if not convo:
+            return jsonify({"error": "Conversation not found."}), 404
+    # Clean up old active chat
+    old_cid = session.get("conversation_id")
+    if old_cid and old_cid in _active_chats:
+        del _active_chats[old_cid]
+    session["conversation_id"] = conversation_id
     return jsonify({"ok": True})
 
 

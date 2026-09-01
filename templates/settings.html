@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings — Itegeko</title>
+    <meta name="description" content="Manage your Itegeko account.">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ asset_version('css/style.css') }}">
+</head>
+<body class="account-body">
+    <div class="account-wrap">
+        <div class="account-header">
+            <div class="account-header-title">
+                <div class="logo-emblem">⚖</div>
+                <h1>Settings</h1>
+            </div>
+            <a href="{{ url_for('home') }}" class="admin-back">← Back to Itegeko</a>
+        </div>
+
+        <nav class="account-tabs" aria-label="Account sections">
+            <a href="{{ url_for('account.profile') }}" class="account-tab">Profile</a>
+            <a href="{{ url_for('account.settings') }}" class="account-tab active">Settings</a>
+        </nav>
+
+        <div class="account-card">
+            <div class="account-card-title">Your name</div>
+            {% if profile_error %}<div class="auth-error">{{ profile_error }}</div>{% endif %}
+            {% if profile_success %}<div class="auth-success">{{ profile_success }}</div>{% endif %}
+            <form method="POST" action="{{ url_for('account.update_profile') }}" class="admin-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <label>Name
+                    <input type="text" name="name" value="{{ user.name }}" required autocomplete="name">
+                </label>
+                <button type="submit" class="auth-submit" style="align-self:flex-start; padding-left:20px; padding-right:20px;">Save name</button>
+            </form>
+        </div>
+
+        <div class="account-card">
+            <div class="account-card-title">Password</div>
+            {% if password_error %}<div class="auth-error">{{ password_error }}</div>{% endif %}
+            {% if password_success %}<div class="auth-success">{{ password_success }}</div>{% endif %}
+            <form method="POST" action="{{ url_for('account.change_password') }}" class="admin-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <label>Current password
+                    <input type="password" name="current_password" required autocomplete="current-password">
+                </label>
+                <label>New password
+                    <input type="password" name="new_password" required minlength="8" autocomplete="new-password">
+                </label>
+                <button type="submit" class="auth-submit" style="align-self:flex-start; padding-left:20px; padding-right:20px;">Change password</button>
+            </form>
+        </div>
+
+        <div class="account-card">
+            <div class="account-card-title">Email verification</div>
+            {% if user.email_verified %}
+            <div class="pricing-current">✓ {{ user.email }} is verified.</div>
+            {% elif not email_configured %}
+            <p class="admin-hint">Email delivery isn't configured on this server yet, so verification is unavailable.</p>
+            {% else %}
+            <p class="admin-hint">{{ user.email }} hasn't been verified yet.</p>
+            <form method="POST" action="{{ url_for('auth_email.resend_verification') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="auth-secondary" style="width:auto; padding-left:18px; padding-right:18px;">Resend verification email</button>
+            </form>
+            {% endif %}
+        </div>
+
+        <div class="account-card">
+            <div class="account-card-title">Sign out</div>
+            <form method="POST" action="{{ url_for('auth.logout') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="admin-delete-btn" style="padding:9px 18px; font-size:0.82rem;">Log out</button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

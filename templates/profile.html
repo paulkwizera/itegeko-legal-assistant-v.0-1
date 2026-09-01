@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your profile — Itegeko</title>
+    <meta name="description" content="Your Itegeko plan and usage.">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ asset_version('css/style.css') }}">
+</head>
+<body class="account-body">
+    <div class="account-wrap">
+        <div class="account-header">
+            <div class="account-header-title">
+                <div class="logo-emblem">⚖</div>
+                <h1>Your Profile</h1>
+            </div>
+            <a href="{{ url_for('home') }}" class="admin-back">← Back to Itegeko</a>
+        </div>
+
+        <nav class="account-tabs" aria-label="Account sections">
+            <a href="{{ url_for('account.profile') }}" class="account-tab active">Profile</a>
+            <a href="{{ url_for('account.settings') }}" class="account-tab">Settings</a>
+        </nav>
+
+        <div class="account-card">
+            <div class="account-identity">
+                <div class="account-avatar" aria-hidden="true">{{ (user.name or '?')[0]|upper }}</div>
+                <div>
+                    <div class="account-name">{{ user.name }}
+                        <span class="plan-badge {{ 'plan-badge-pro' if plan == 'pro' else 'plan-badge-free' }}">{{ plan|capitalize }}</span>
+                    </div>
+                    <div class="account-email">{{ user.email }}</div>
+                </div>
+            </div>
+            {% if email_configured and not user.email_verified %}
+            <div class="account-notice">
+                Your email isn't verified yet. <a href="{{ url_for('account.settings') }}">Verify it in Settings →</a>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="account-card">
+            <div class="account-card-title">Usage</div>
+            <div class="usage-row">
+                <div class="usage-label"><span>Today</span><span>{{ daily_used }} / {{ daily_limit }} prompts</span></div>
+                <div class="usage-bar"><div class="usage-bar-fill" style="width: {{ daily_pct }}%;"></div></div>
+            </div>
+            <div class="usage-row">
+                <div class="usage-label"><span>This week</span><span>{{ weekly_used }} / {{ weekly_limit }} prompts</span></div>
+                <div class="usage-bar"><div class="usage-bar-fill" style="width: {{ weekly_pct }}%;"></div></div>
+            </div>
+
+            {% if plan == 'pro' %}
+            <div class="pricing-current" style="margin-top:6px;">✓ You're on Itegeko Pro — thank you for your support.</div>
+            {% else %}
+            <a href="{{ url_for('pricing') }}" class="auth-submit pricing-btn pricing-btn-gold" style="margin-top:10px;">Upgrade to Pro</a>
+            {% endif %}
+        </div>
+
+        <div class="account-card">
+            <div class="account-card-title">Account</div>
+            <dl class="account-meta">
+                <div><dt>Member since</dt><dd>{{ user.created_at.strftime('%B %Y') if user.created_at else '—' }}</dd></div>
+                <div><dt>Plan</dt><dd>{{ plan|capitalize }}</dd></div>
+            </dl>
+        </div>
+    </div>
+</body>
+</html>

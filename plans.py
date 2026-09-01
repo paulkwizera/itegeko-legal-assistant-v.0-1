@@ -8,7 +8,7 @@ overridable via environment variables so you can tune them without a
 code change.
 """
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -19,15 +19,19 @@ import db
 GUEST_POPUP_AFTER = int(os.environ.get("GUEST_POPUP_AFTER", "3"))
 
 # Hard ceiling on anonymous (no-account) messages per browser session per day.
-# This does NOT block at GUEST_POPUP_AFTER -- guests keep chatting after the
-# popup, they just eventually hit this higher ceiling and are asked to sign up.
-GUEST_MESSAGE_LIMIT = int(os.environ.get("GUEST_MESSAGE_LIMIT", "15"))
+GUEST_MESSAGE_LIMIT = int(os.environ.get("GUEST_MESSAGE_LIMIT", "10"))
 
 # Messages/day for a logged-in account on the Free plan.
-FREE_PLAN_DAILY_LIMIT = int(os.environ.get("FREE_PLAN_DAILY_LIMIT", "30"))
+FREE_PLAN_DAILY_LIMIT = int(os.environ.get("FREE_PLAN_DAILY_LIMIT", "10"))
+
+# Messages/week for a logged-in account on the Free plan.
+FREE_PLAN_WEEKLY_LIMIT = int(os.environ.get("FREE_PLAN_WEEKLY_LIMIT", "60"))
 
 # Messages/day for Pro -- generous, mainly an abuse backstop.
 PRO_PLAN_DAILY_LIMIT = int(os.environ.get("PRO_PLAN_DAILY_LIMIT", "500"))
+
+# Messages/week for Pro -- very high safety limit.
+PRO_PLAN_WEEKLY_LIMIT = int(os.environ.get("PRO_PLAN_WEEKLY_LIMIT", "3500"))
 
 
 def get_plan(user_id):
@@ -65,5 +69,25 @@ def messages_used_today(user_id):
     })
 
 
+def messages_used_this_week(user_id):
+    """Count messages sent in the current calendar week (Monday 00:00 UTC)."""
+    if db.messages is None:
+        return 0
+    now = datetime.now(timezone.utc)
+    # weekday() returns 0=Mon, 6=Sun
+    start_of_week = (now - timedelta(days=now.weekday())).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    return db.messages.count_documents({
+        "user_id": user_id,
+        "role": "user",
+        "created_at": {"$gte": start_of_week},
+    })
+
+
 def daily_limit_for(plan):
     return PRO_PLAN_DAILY_LIMIT if plan == "pro" else FREE_PLAN_DAILY_LIMIT
+
+
+def weekly_limit_for(plan):
+    return PRO_PLAN_WEEKLY_LIMIT if plan == "pro" else FREE_PLAN_WEEKLY_LIMIT

@@ -6,3 +6,5 @@ pymongo
 dnspython
 pypdf
 requests
+flask-wtf
+flask-limiter

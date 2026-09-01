@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pricing — Itegeko</title>
+    <meta name="description" content="Choose your Itegeko plan. Free access to Rwandan legal AI or upgrade to Pro for unlimited prompts.">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ asset_version('css/style.css') }}">
+</head>
+<body class="pricing-body">
+    <div class="pricing-wrap">
+        <div class="pricing-header">
+            <div class="logo-emblem logo-emblem-lg">⚖</div>
+            <div class="pricing-title">Choose Your Plan</div>
+            <p class="pricing-sub">Get the legal guidance you need — powered by AI, grounded in Rwandan law.</p>
+        </div>
+
+        {% if error %}
+        <div class="admin-flash admin-flash-error pricing-flash">{{ error }}</div>
+        {% endif %}
+        {% if success %}
+        <div class="admin-flash admin-flash-success pricing-flash">{{ success }}</div>
+        {% endif %}
+
+        <div class="pricing-grid">
+            <!-- Free Plan -->
+            <div class="pricing-card">
+                <div class="pricing-plan-name">Free</div>
+                <div class="pricing-price">$0<span> / month</span></div>
+                <ul class="pricing-features">
+                    <li>{{ free_limit }} prompts per day</li>
+                    <li>60 prompts per week</li>
+                    <li>Conversation history</li>
+                    <li>All legal areas covered</li>
+                    <li>Gazette-grounded answers</li>
+                </ul>
+                {% if plan == 'free' and logged_in %}
+                <div class="pricing-current">✓ Your current plan</div>
+                {% elif not logged_in %}
+                <a href="{{ url_for('auth.signup') }}" class="auth-submit pricing-btn">Sign up free</a>
+                {% endif %}
+            </div>
+
+            <!-- Pro Plan -->
+            <div class="pricing-card pricing-card-pro">
+                <div class="pricing-badge">Recommended</div>
+                <div class="pricing-plan-name">Pro</div>
+                <div class="pricing-price">{{ price_label }}<span> / month</span></div>
+                <ul class="pricing-features">
+                    <li>Unlimited prompts</li>
+                    <li>Priority response speed</li>
+                    <li>Full conversation history</li>
+                    <li>All legal areas covered</li>
+                    <li>Gazette-grounded answers</li>
+                    <li>Priority support</li>
+                </ul>
+                {% if plan == 'pro' %}
+                <div class="pricing-current">✓ Your current plan</div>
+                {% elif logged_in and payments_configured %}
+                <form method="POST" action="{{ url_for('upgrade') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="auth-submit pricing-btn pricing-btn-gold">Upgrade to Pro</button>
+                </form>
+                {% elif logged_in and not payments_configured %}
+                <div class="pricing-current">Payments coming soon</div>
+                {% else %}
+                <a href="{{ url_for('auth.signup') }}" class="auth-submit pricing-btn pricing-btn-gold">Sign up &amp; upgrade</a>
+                {% endif %}
+            </div>
+        </div>
+
+        <p class="pricing-note">All plans include access to the full Rwandan legal knowledge base. Pro subscriptions are billed monthly via Flutterwave (card or Mobile Money).</p>
+
+        <div style="text-align:center;">
+            <a href="{{ url_for('home') }}" class="admin-back">← Back to Itegeko</a>
+        </div>
+    </div>
+</body>
+</html>

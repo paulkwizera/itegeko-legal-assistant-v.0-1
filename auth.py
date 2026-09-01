@@ -7,16 +7,21 @@ the user's Mongo _id as a string; no password or password hash ever touches
 the session or gets sent back to the browser.
 """
 import re
+import logging
 from datetime import datetime, timezone
-from functools import wraps
 
-from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, session
 from werkzeug.security import generate_password_hash, check_password_hash
 from pymongo.errors import DuplicateKeyError
 from bson import ObjectId
 from bson.errors import InvalidId
 
 import db
+import auth_email
+from extensions import limiter
+from auth_utils import login_required, admin_required  # re-exported for auth.py / admin.py callers
+
+logger = logging.getLogger("itegeko.auth")
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -51,29 +56,8 @@ def _claim_guest_history(user_id):
         db.migrate_guest_messages(guest_id, user_id)
 
 
-def login_required(view):
-    @wraps(view)
-    def wrapped(*args, **kwargs):
-        if not session.get("user_id"):
-            if request.path.startswith("/chat"):
-                return jsonify({"error": "Please log in to continue."}), 401
-            return redirect(url_for("auth.login"))
-        return view(*args, **kwargs)
-    return wrapped
-
-
-def admin_required(view):
-    @wraps(view)
-    def wrapped(*args, **kwargs):
-        if not session.get("user_id"):
-            return redirect(url_for("auth.login"))
-        if not session.get("is_admin"):
-            return jsonify({"error": "Admin access required."}), 403
-        return view(*args, **kwargs)
-    return wrapped
-
-
 @auth_bp.route("/signup", methods=["GET", "POST"])
+@limiter.limit("10 per minute")
 def signup():
     if request.method == "GET":
         return render_template("signup.html")
@@ -101,6 +85,7 @@ def signup():
             "plan": "free",
             "pro_until": None,
             "onboarding_complete": False,
+            "email_verified": False,
             "profile": {},
             "created_at": datetime.now(timezone.utc),
         })
@@ -108,15 +93,26 @@ def signup():
         return render_template("signup.html", error="An account with that email already exists.")
 
     user_id = str(result.inserted_id)
+    session.permanent = True
     session["user_id"] = user_id
     session["user_name"] = name
+    session["user_email"] = email
     session["is_admin"] = False
     session["plan"] = "free"
+    session["email_verified"] = False
     _claim_guest_history(user_id)
+
+    if auth_email.is_email_configured():
+        try:
+            auth_email.send_verification_email(user_id, email, name)
+        except Exception:
+            logger.exception("Failed to send verification email at signup")
+
     return redirect(url_for("auth.onboarding"))
 
 
 @auth_bp.route("/login", methods=["GET", "POST"])
+@limiter.limit("15 per minute")
 def login():
     if request.method == "GET":
         return render_template("login.html")
@@ -132,10 +128,13 @@ def login():
         return render_template("login.html", error="Incorrect email or password.")
 
     user_id = str(user["_id"])
+    session.permanent = True
     session["user_id"] = user_id
     session["user_name"] = user.get("name", "")
+    session["user_email"] = user.get("email", "")
     session["is_admin"] = bool(user.get("is_admin", False))
     session["plan"] = user.get("plan", "free")
+    session["email_verified"] = bool(user.get("email_verified", False))
     _claim_guest_history(user_id)
 
     if not user.get("onboarding_complete"):

@@ -171,13 +171,7 @@ def search_gazette(query, limit=3):
         return []
 
 
-def build_grounding_context(query, limit=3):
-    """Format matching gazette entries as a short block of extra context.
-    Returns "" if nothing relevant was found."""
-    matches = search_gazette(query, limit=limit)
-    if not matches:
-        return ""
-
+def _format_grounding(matches):
     lines = ["Relevant excerpts from the Official Gazette on file:"]
     for m in matches:
         title = m.get("title", "Untitled entry")
@@ -186,3 +180,21 @@ def build_grounding_context(query, limit=3):
         header = f"- {title}" + (f" (Act {act})" if act else "")
         lines.append(f"{header}\n  {text}")
     return "\n".join(lines)
+
+
+def build_grounding_context(query, limit=3):
+    """Format matching gazette entries as a short block of extra context.
+    Returns "" if nothing relevant was found."""
+    matches = search_gazette(query, limit=limit)
+    return _format_grounding(matches) if matches else ""
+
+
+def search_and_ground(query, limit=3):
+    """Like build_grounding_context, but also returns a compact
+    {"title", "act_number"} list of the same matches -- for surfacing
+    "Sources" back to the client alongside the AI's answer, not just
+    folding them into the prompt and hoping the model cites them."""
+    matches = search_gazette(query, limit=limit)
+    grounding = _format_grounding(matches) if matches else ""
+    sources = [{"title": m.get("title", ""), "act_number": m.get("act_number", "")} for m in matches]
+    return grounding, sources

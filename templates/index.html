@@ -5,17 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Itegeko — Rwanda Legal Assistant</title>
     <meta name="description" content="Itegeko is a professional AI legal assistant specializing in the laws and legal system of Rwanda.">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ asset_version('css/style.css') }}">
 </head>
 <body>
+    <a href="#thread-region" class="skip-link">Skip to chat</a>
 
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-top">
-            <button class="toggle-btn" data-tip="Expand" onclick="toggleSidebar()">
+            <button class="toggle-btn" data-tip="Expand" onclick="toggleSidebar()" aria-label="Toggle sidebar">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
             </button>
-            <div class="logo-emblem">⚖</div>
+            <div class="logo-emblem" aria-hidden="true">⚖</div>
             <div class="logo-label">Itegeko</div>
         </div>
 
@@ -32,61 +34,117 @@
         <div class="areas-list" id="areasList">
             <div class="area-item" onclick="askTopic('What does the Constitution of Rwanda say about fundamental rights?')">📜 Constitutional Law</div>
             <div class="area-item" onclick="askTopic('Explain the criminal justice process in Rwanda.')">⚖ Criminal Law</div>
-            <div class="area-item" onclick="askTopic('What are the land ownership rights under Rwandan law?')">🏡 Land & Property Law</div>
+            <div class="area-item" onclick="askTopic('What are the land ownership rights under Rwandan law?')">🏡 Land &amp; Property Law</div>
             <div class="area-item" onclick="askTopic('What are the marriage and divorce laws in Rwanda?')">👨‍👩‍👧 Family Law</div>
             <div class="area-item" onclick="askTopic('How are businesses registered and regulated in Rwanda?')">🏢 Commercial Law</div>
             <div class="area-item" onclick="askTopic('What are employee rights and labor regulations in Rwanda?')">👷 Labour Law</div>
             <div class="area-item" onclick="askTopic('How does the court system work in Rwanda?')">🏛 Judiciary System</div>
         </div>
 
+        {% if not is_guest %}
+        <div class="sidebar-section-label">Conversations</div>
+        <div class="convo-search-wrap">
+            <input type="search" id="convoSearch" class="convo-search-input" placeholder="Search conversations" aria-label="Search conversations">
+        </div>
+        <div class="convo-list" id="convoList" role="list" aria-label="Conversation history"></div>
+        {% endif %}
+
         <div class="sidebar-spacer"></div>
 
         <div class="sidebar-footer">
-            <div class="account-row">
-                <span>{{ user_name }}</span>
-                <form method="POST" action="{{ url_for('auth.logout') }}" style="display:inline;">
-                    <button type="submit" class="logout-btn">Log out</button>
-                </form>
-            </div>
             <div class="disclaimer-box"><strong>⚠ Legal Disclaimer</strong>General legal information only. For personal legal matters, always consult a licensed Rwandan advocate.</div>
-            <div class="flag-stripe"><span class="f-blue"></span><span class="f-yellow"></span><span class="f-green"></span></div>
+            <div class="flag-stripe" aria-hidden="true"><span class="f-blue"></span><span class="f-yellow"></span><span class="f-green"></span></div>
         </div>
     </aside>
 
     <div class="main">
         <div class="topbar">
-            <div class="status-pill" id="statusPill"><span class="status-dot"></span> Online</div>
+            <div class="topbar-left">
+                {% if not is_guest %}
+                <button class="topbar-icon-btn" id="clearConvoBtn" data-tip="Clear conversation" aria-label="Clear conversation" style="display:none;" onclick="clearCurrentConversation()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                </button>
+                {% endif %}
+            </div>
+            <div class="topbar-right">
+                <div class="status-pill" id="statusPill"><span class="status-dot" aria-hidden="true"></span> Online</div>
+
+                {% if is_guest %}
+                <div class="topbar-auth">
+                    <a href="{{ url_for('auth.login') }}" class="topbar-btn topbar-btn-ghost">Log in</a>
+                    <a href="{{ url_for('auth.signup') }}" class="topbar-btn topbar-btn-gold">Sign up</a>
+                </div>
+                {% else %}
+                <div class="profile-menu">
+                    <button class="profile-menu-btn" id="profileMenuBtn" aria-haspopup="menu" aria-expanded="false" aria-label="Account menu" onclick="toggleProfileMenu()">
+                        <span class="profile-avatar" aria-hidden="true">{{ (user_name or '?')[0]|upper }}</span>
+                        <span class="profile-name">{{ user_name }}</span>
+                        <svg class="profile-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                    </button>
+                    <div class="profile-dropdown" id="profileDropdown" role="menu">
+                        {% if is_admin %}<a href="{{ url_for('admin.list_documents') }}" role="menuitem">Admin documents</a>{% endif %}
+                        <a href="{{ url_for('account.profile') }}" role="menuitem">Profile <span class="plan-badge {{ 'plan-badge-pro' if plan == 'pro' else 'plan-badge-free' }}">{{ plan|capitalize }}</span></a>
+                        <a href="{{ url_for('account.settings') }}" role="menuitem">Settings</a>
+                        <div class="profile-dropdown-divider"></div>
+                        <form method="POST" action="{{ url_for('auth.logout') }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" role="menuitem">Log out</button>
+                        </form>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
         </div>
 
         <div class="empty-state" id="emptyState">
-            <div class="greeting">Hi there, let's talk <span>Rwandan law</span></div>
+            <div class="greeting">{{ 'Hi ' + user_name + ', let' if user_name else "Hi there, let" }}'s talk <span>Rwandan law</span></div>
             <div class="greeting-sub">Ask about legislation, court procedure, or your rights — Itegeko answers with the relevant Rwandan law, act, or article.</div>
             <div class="composer-wrap">
                 <div class="composer">
-                    <button class="composer-icon-btn" data-tip="Legal areas" onclick="toggleSidebar(true); toggleAreasList(true);">
+                    <button class="composer-icon-btn" data-tip="Legal areas" aria-label="Browse legal areas" onclick="toggleSidebar(true); toggleAreasList(true);">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                     </button>
-                    <textarea id="userInputTop" class="composer-input" placeholder="Ask about Rwandan law" rows="1" maxlength="4000"></textarea>
-                    <button class="send-btn" id="sendBtnTop" title="Send">
+                    <textarea id="userInputTop" class="composer-input" placeholder="Ask about Rwandan law" rows="1" maxlength="4000" aria-label="Ask about Rwandan law"></textarea>
+                    <button class="send-btn" id="sendBtnTop" title="Send" aria-label="Send message">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                     </button>
                 </div>
                 <div class="composer-hint">Itegeko is AI and can make mistakes. Verify important matters with a licensed advocate.</div>
             </div>
+
+            <div class="starter-prompts">
+                <button class="starter-chip" onclick="askTopic('What are my rights if I am arrested in Rwanda?')">
+                    <span class="starter-chip-icon" aria-hidden="true">⚖</span>
+                    <span class="starter-chip-text">What are my rights if I'm arrested in Rwanda?</span>
+                </button>
+                <button class="starter-chip" onclick="askTopic('How do I legally register a business in Rwanda?')">
+                    <span class="starter-chip-icon" aria-hidden="true">🏢</span>
+                    <span class="starter-chip-text">How do I register a business in Rwanda?</span>
+                </button>
+                <button class="starter-chip" onclick="askTopic('What does Rwandan law say about land inheritance?')">
+                    <span class="starter-chip-icon" aria-hidden="true">🏡</span>
+                    <span class="starter-chip-text">What does the law say about land inheritance?</span>
+                </button>
+                <button class="starter-chip" onclick="askTopic('What are the legal grounds for divorce in Rwanda?')">
+                    <span class="starter-chip-icon" aria-hidden="true">👨‍👩‍👧</span>
+                    <span class="starter-chip-text">What are the grounds for divorce in Rwanda?</span>
+                </button>
+            </div>
         </div>
 
         <div class="chat-messages" id="chatMessages" style="display:none;">
-            <div class="thread" id="thread"></div>
+            <div class="thread" id="thread" role="log" aria-live="polite" aria-relevant="additions" aria-label="Conversation"></div>
+            <div id="thread-region"></div>
         </div>
 
         <div class="bottom-composer" id="bottomComposer" style="display:none;">
             <div class="composer-wrap">
                 <div class="composer">
-                    <button class="composer-icon-btn" data-tip="Legal areas" onclick="toggleSidebar(true); toggleAreasList(true);">
+                    <button class="composer-icon-btn" data-tip="Legal areas" aria-label="Browse legal areas" onclick="toggleSidebar(true); toggleAreasList(true);">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                     </button>
-                    <textarea id="userInput" class="composer-input" placeholder="Ask about Rwandan law" rows="1" maxlength="4000"></textarea>
-                    <button class="send-btn" id="sendBtn" title="Send">
+                    <textarea id="userInput" class="composer-input" placeholder="Ask about Rwandan law" rows="1" maxlength="4000" aria-label="Ask about Rwandan law"></textarea>
+                    <button class="send-btn" id="sendBtn" title="Send" aria-label="Send message">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                     </button>
                 </div>
@@ -95,7 +153,25 @@
         </div>
     </div>
 
+    {% if is_guest %}
+    <div class="modal-overlay" id="guestModal" role="dialog" aria-modal="true" aria-labelledby="guestModalTitle">
+        <div class="modal-card">
+            <button class="modal-close" id="guestModalClose" aria-label="Close">×</button>
+            <div class="modal-emblem logo-emblem" aria-hidden="true">⚖</div>
+            <div class="modal-title" id="guestModalTitle">Continue chatting?</div>
+            <div class="modal-body">Create a free account to save your conversations and unlock your daily free prompts.</div>
+            <div class="modal-actions">
+                <a href="{{ url_for('auth.signup') }}" class="auth-submit modal-primary-btn">Sign Up</a>
+                <a href="{{ url_for('auth.login') }}" class="modal-outline-btn">Login</a>
+            </div>
+            <button class="modal-secondary-btn" id="guestModalContinue">Continue as Guest</button>
+        </div>
+    </div>
+    {% endif %}
+
 <script>
+    const IS_GUEST = {{ 'true' if is_guest else 'false' }};
+
     const sidebar        = document.getElementById('sidebar');
     const areasList       = document.getElementById('areasList');
     const emptyState     = document.getElementById('emptyState');
@@ -103,6 +179,7 @@
     const bottomComposer = document.getElementById('bottomComposer');
     const thread         = document.getElementById('thread');
     const statusPill     = document.getElementById('statusPill');
+    const clearConvoBtn  = document.getElementById('clearConvoBtn');
 
     const inputTop  = document.getElementById('userInputTop');
     const inputBot  = document.getElementById('userInput');
@@ -110,6 +187,7 @@
     const sendBot   = document.getElementById('sendBtn');
 
     let conversationStarted = false;
+    let currentConversationId = null; // set once we know we're viewing a saved conversation
 
     function toggleSidebar(forceOpen) {
         if (forceOpen === true) { sidebar.classList.add('expanded'); return; }
@@ -147,6 +225,7 @@
         emptyState.style.display = 'none';
         chatMessages.style.display = 'flex';
         bottomComposer.style.display = 'flex';
+        if (clearConvoBtn) clearConvoBtn.style.display = 'flex';
         inputBot.focus();
     }
 
@@ -159,30 +238,85 @@
         sendMessage(text);
     }
 
+    // ── Markdown rendering (headings, bold/italic, inline code, fenced
+    // code blocks with a copy button, links, lists, blockquotes, hr) ──
+    function escapeHtml(s) {
+        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
     function renderMarkdown(raw) {
-        const escape = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        let text = escape(raw);
+        // Pull fenced code blocks out first so their content is never
+        // touched by the rest of the pipeline (no accidental **bold** etc.
+        // inside code, and it lets us render each as its own component).
+        const codeBlocks = [];
+        let text = raw.replace(/```([a-zA-Z0-9_+-]*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+            const idx = codeBlocks.length;
+            codeBlocks.push({ lang: lang || '', code: code.replace(/\n$/, '') });
+            return `\u0000CODEBLOCK${idx}\u0000`;
+        });
+
+        text = escapeHtml(text);
+
         text = text.replace(/^### (.*)$/gm, '<h3>$1</h3>');
         text = text.replace(/^## (.*)$/gm, '<h2>$1</h2>');
+        text = text.replace(/^# (.*)$/gm, '<h2>$1</h2>');
+
+        // Links -- http(s) only, and exclude quote/angle chars from the URL
+        // so a crafted link can't break out of the href attribute.
+        text = text.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)"<>]+)\)/g, (_, label, url) =>
+            `<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`);
+
         text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        text = text.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
         text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+        text = text.replace(/^\s*---\s*$/gm, '<hr>');
 
         const lines = text.split('\n');
-        let html = '', listType = null, paragraphBuf = [];
+        let html = '', listType = null, paragraphBuf = [], inQuote = false;
         const flushParagraph = () => { if (paragraphBuf.length) { html += `<p>${paragraphBuf.join(' ')}</p>`; paragraphBuf = []; } };
         const closeList = () => { if (listType) { html += `</${listType}>`; listType = null; } };
+        const closeQuote = () => { if (inQuote) { html += '</blockquote>'; inQuote = false; } };
 
         for (const line of lines) {
             const bulletMatch = line.match(/^\s*[-*]\s+(.*)$/);
             const numberedMatch = line.match(/^\s*\d+\.\s+(.*)$/);
-            if (bulletMatch) { flushParagraph(); if (listType !== 'ul') { closeList(); html += '<ul>'; listType = 'ul'; } html += `<li>${bulletMatch[1]}</li>`; }
-            else if (numberedMatch) { flushParagraph(); if (listType !== 'ol') { closeList(); html += '<ol>'; listType = 'ol'; } html += `<li>${numberedMatch[1]}</li>`; }
-            else if (line.trim() === '') { flushParagraph(); closeList(); }
-            else if (line.match(/^<h[23]>/)) { flushParagraph(); closeList(); html += line; }
-            else { paragraphBuf.push(line); }
+            const quoteMatch = line.match(/^\s*&gt;\s?(.*)$/);
+            const placeholderMatch = line.match(/^\u0000CODEBLOCK(\d+)\u0000$/);
+
+            if (placeholderMatch) {
+                flushParagraph(); closeList(); closeQuote();
+                const block = codeBlocks[Number(placeholderMatch[1])];
+                const escapedCode = escapeHtml(block.code);
+                const langLabel = block.lang || 'text';
+                html += `<div class="code-block"><div class="code-block-header"><span>${escapeHtml(langLabel)}</span><button type="button" class="code-copy-btn" onclick="copyCodeBlock(this)">Copy</button></div><pre><code>${escapedCode}</code></pre></div>`;
+            }
+            else if (bulletMatch) { flushParagraph(); closeQuote(); if (listType !== 'ul') { closeList(); html += '<ul>'; listType = 'ul'; } html += `<li>${bulletMatch[1]}</li>`; }
+            else if (numberedMatch) { flushParagraph(); closeQuote(); if (listType !== 'ol') { closeList(); html += '<ol>'; listType = 'ol'; } html += `<li>${numberedMatch[1]}</li>`; }
+            else if (quoteMatch) { flushParagraph(); closeList(); if (!inQuote) { html += '<blockquote>'; inQuote = true; } html += `${quoteMatch[1]}<br>`; }
+            else if (line.trim() === '') { flushParagraph(); closeList(); closeQuote(); }
+            else if (line.match(/^<h[23]>/) || line.match(/^<hr>/)) { flushParagraph(); closeList(); closeQuote(); html += line; }
+            else { closeQuote(); paragraphBuf.push(line); }
         }
-        flushParagraph(); closeList();
+        flushParagraph(); closeList(); closeQuote();
         return html;
+    }
+
+    function copyCodeBlock(btn) {
+        const code = btn.closest('.code-block').querySelector('code').textContent;
+        navigator.clipboard.writeText(code).then(() => {
+            const original = btn.textContent;
+            btn.textContent = 'Copied';
+            setTimeout(() => { btn.textContent = original; }, 1200);
+        });
+    }
+
+    function renderSources(sources) {
+        if (!sources || !sources.length) return '';
+        const chips = sources.map(s => {
+            const label = s.act_number ? `${s.title} (Act ${s.act_number})` : s.title;
+            return `<span class="source-chip">📖 ${escapeHtml(label)}</span>`;
+        }).join('');
+        return `<div class="msg-sources">${chips}</div>`;
     }
 
     function scrollToBottom() {
@@ -217,62 +351,97 @@
         });
     }
 
-    function replaceTypingWithReply(typingId, text, isError, userMessageForRetry) {
+    function buildReplyActions(row, text, sources, userMessageForRetry) {
+        const actions = document.createElement('div');
+        actions.className = 'msg-actions';
+        actions.innerHTML = `
+            <button class="msg-action-btn" data-tip="Good response" title="Good response" aria-label="Good response"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg></button>
+            <button class="msg-action-btn" data-tip="Poor response" title="Poor response" aria-label="Poor response"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"/></svg></button>
+            <button class="msg-action-btn" data-tip="Copy" title="Copy" aria-label="Copy response"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+            <button class="msg-action-btn" data-tip="Regenerate" title="Regenerate" aria-label="Regenerate response"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+        `;
+        const [likeBtn, dislikeBtn, copyBtn, retryBtn] = actions.querySelectorAll('.msg-action-btn');
+        likeBtn.addEventListener('click', () => { likeBtn.classList.toggle('liked'); dislikeBtn.classList.remove('liked'); });
+        dislikeBtn.addEventListener('click', () => { dislikeBtn.classList.toggle('liked'); likeBtn.classList.remove('liked'); });
+        copyBtn.addEventListener('click', () => copyText(copyBtn, text));
+        retryBtn.addEventListener('click', () => {
+            if (userMessageForRetry) { row.remove(); sendMessage(userMessageForRetry, true); }
+        });
+        if (sources && sources.length) row.insertAdjacentHTML('beforeend', renderSources(sources));
+        row.appendChild(actions);
+    }
+
+    function replaceTypingWithReply(typingId, text, isError, userMessageForRetry, sources) {
         const row = document.getElementById(typingId);
         if (!row) return;
         row.innerHTML = '';
 
         const textEl = document.createElement('div');
         textEl.className = 'bot-text' + (isError ? ' error-text' : '');
-        if (isError) {
-            textEl.textContent = text;
-        } else {
-            textEl.innerHTML = renderMarkdown(text);
-        }
+        if (isError) { textEl.textContent = text; } else { textEl.innerHTML = renderMarkdown(text); }
         row.appendChild(textEl);
 
         if (!isError) {
-            const actions = document.createElement('div');
-            actions.className = 'msg-actions';
-            actions.innerHTML = `
-                <button class="msg-action-btn" data-tip="Good response" title="Good response"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg></button>
-                <button class="msg-action-btn" data-tip="Poor response" title="Poor response"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"/></svg></button>
-                <button class="msg-action-btn" data-tip="Copy" title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
-                <button class="msg-action-btn" data-tip="Regenerate" title="Regenerate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
-            `;
-            const [likeBtn, dislikeBtn, copyBtn, retryBtn] = actions.querySelectorAll('.msg-action-btn');
-            likeBtn.addEventListener('click', () => { likeBtn.classList.toggle('liked'); dislikeBtn.classList.remove('liked'); });
-            dislikeBtn.addEventListener('click', () => { dislikeBtn.classList.toggle('liked'); likeBtn.classList.remove('liked'); });
-            copyBtn.addEventListener('click', () => copyText(copyBtn, text));
-            retryBtn.addEventListener('click', () => {
-                if (userMessageForRetry) {
-                    row.remove();
-                    sendMessage(userMessageForRetry, true);
-                }
-            });
-            row.appendChild(actions);
+            buildReplyActions(row, text, sources, userMessageForRetry);
         } else if (userMessageForRetry) {
             const actions = document.createElement('div');
             actions.className = 'msg-actions';
-            actions.innerHTML = `<button class="msg-action-btn" data-tip="Retry" title="Retry"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>`;
-            actions.querySelector('.msg-action-btn').addEventListener('click', () => {
-                row.remove();
-                sendMessage(userMessageForRetry, true);
-            });
+            actions.innerHTML = `<button class="msg-action-btn" data-tip="Retry" title="Retry" aria-label="Retry"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>`;
+            actions.querySelector('.msg-action-btn').addEventListener('click', () => { row.remove(); sendMessage(userMessageForRetry, true); });
             row.appendChild(actions);
         }
+        scrollToBottom();
+    }
 
+    function renderLimitCard(typingId, data, isGuest) {
+        const row = document.getElementById(typingId);
+        if (!row) return;
+        row.innerHTML = '';
+        const isDaily = data.limit_type !== 'weekly';
+        const title = isGuest ? "You've reached today's guest limit" : (isDaily ? "You've reached today's free prompt limit" : "You've reached your weekly free limit");
+        let actionsHtml = '';
+        if (isGuest) {
+            actionsHtml = `<a href="${data.signup_url || '/signup'}" class="limit-primary">Sign Up</a><a href="/login" class="limit-secondary">Login</a>`;
+        } else {
+            actionsHtml = `<a href="${data.upgrade_url || '/pricing'}" class="limit-primary">Upgrade to Pro</a>`;
+        }
+        row.innerHTML = `
+            <div class="limit-card">
+                <div class="limit-card-title">${escapeHtml(title)}</div>
+                <div class="limit-card-body">${escapeHtml(data.error || '')}</div>
+                <div class="limit-card-actions">${actionsHtml}</div>
+            </div>`;
         scrollToBottom();
     }
 
     function setOnlineStatus(online) {
         if (online) {
             statusPill.classList.remove('offline');
-            statusPill.innerHTML = '<span class="status-dot"></span> Online';
+            statusPill.innerHTML = '<span class="status-dot" aria-hidden="true"></span> Online';
         } else {
             statusPill.classList.add('offline');
-            statusPill.innerHTML = '<span class="status-dot"></span> Rate limited';
+            statusPill.innerHTML = '<span class="status-dot" aria-hidden="true"></span> Rate limited';
         }
+    }
+
+    // ── Streaming reply renderer: buffers tokens and repaints at most
+    // once per animation frame, instead of re-parsing markdown on every
+    // single token -- keeps long answers smooth on slower devices. ──
+    function createStreamRenderer(textEl) {
+        let raw = '';
+        let scheduled = false;
+        function flush() {
+            scheduled = false;
+            textEl.innerHTML = renderMarkdown(raw) + '<span class="stream-cursor" aria-hidden="true"></span>';
+            scrollToBottom();
+        }
+        return {
+            push(token) {
+                raw += token;
+                if (!scheduled) { scheduled = true; requestAnimationFrame(flush); }
+            },
+            raw: () => raw,
+        };
     }
 
     async function sendMessage(text, isRetry = false) {
@@ -280,22 +449,92 @@
         if (!isRetry) appendUserMessage(text);
 
         const typingId = appendTypingRow();
+        let streamer = null;
+        let textEl = null;
 
         try {
-            const res = await fetch('/chat', {
+            const res = await fetch('/chat/stream', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ message: text })
             });
-            const data = await res.json();
 
-            if (res.ok && data.response) {
-                replaceTypingWithReply(typingId, data.response, false, text);
-                setOnlineStatus(true);
-            } else {
-                replaceTypingWithReply(typingId, '⚠ ' + (data.error || 'An unknown error occurred.'), true, text);
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                if (data.limit_reached) {
+                    renderLimitCard(typingId, data, IS_GUEST);
+                } else {
+                    replaceTypingWithReply(typingId, '⚠ ' + (data.error || 'An unknown error occurred.'), true, text);
+                }
                 if (res.status === 429) setOnlineStatus(false);
+                return;
             }
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let sawError = null;
+            let doneSources = [];
+            let doneConversationId = null;
+            let showSignup = false;
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+
+                let boundary;
+                while ((boundary = buffer.indexOf('\n\n')) !== -1) {
+                    const rawEvent = buffer.slice(0, boundary);
+                    buffer = buffer.slice(boundary + 2);
+                    const line = rawEvent.trim();
+                    if (!line.startsWith('data:')) continue;
+                    let data;
+                    try { data = JSON.parse(line.slice(5).trim()); } catch (e) { continue; }
+
+                    if (data.token) {
+                        if (!streamer) {
+                            const row = document.getElementById(typingId);
+                            row.innerHTML = '';
+                            textEl = document.createElement('div');
+                            textEl.className = 'bot-text';
+                            row.appendChild(textEl);
+                            streamer = createStreamRenderer(textEl);
+                        }
+                        streamer.push(data.token);
+                    } else if (data.done) {
+                        doneSources = data.sources || [];
+                        doneConversationId = data.conversation_id || null;
+                        showSignup = !!data.show_signup_prompt;
+                    } else if (data.error) {
+                        sawError = data.error;
+                    }
+                }
+            }
+
+            setOnlineStatus(true);
+            const row = document.getElementById(typingId);
+            if (!row) return;
+
+            if (sawError && !streamer) {
+                replaceTypingWithReply(typingId, '⚠ ' + sawError, true, text);
+                return;
+            }
+
+            const finalText = streamer ? streamer.raw() : '';
+            if (textEl) {
+                textEl.innerHTML = renderMarkdown(finalText);
+                buildReplyActions(row, finalText, doneSources, text);
+            } else if (!sawError) {
+                replaceTypingWithReply(typingId, '⚠ No response was received. Please try again.', true, text);
+                return;
+            }
+            scrollToBottom();
+
+            if (doneConversationId) currentConversationId = doneConversationId;
+            if (!IS_GUEST) { loadConversations(); }
+            if (showSignup) openGuestModal();
+
         } catch (err) {
             replaceTypingWithReply(typingId, '⚠ Unable to reach the server. Please check your connection and try again.', true, text);
         }
@@ -306,7 +545,7 @@
             appendUserMessage(item.text);
         } else {
             const typingId = appendTypingRow();
-            replaceTypingWithReply(typingId, item.text, false, null);
+            replaceTypingWithReply(typingId, item.text, false, null, null);
         }
     }
 
@@ -318,24 +557,192 @@
             if (history.length > 0) {
                 showConversation();
                 history.forEach(renderStoredMessage);
+                currentConversationId = data.conversation_id || null;
                 scrollToBottom();
+                if (!IS_GUEST) highlightActiveConvo(currentConversationId);
             }
         } catch (err) {
             // First visit or no history yet -- leave the greeting showing.
         }
     }
 
-    window.addEventListener('DOMContentLoaded', loadHistory);
+    window.addEventListener('DOMContentLoaded', () => {
+        loadHistory();
+        if (!IS_GUEST) loadConversations();
+    });
 
     async function startNewChat() {
         try { await fetch('/chat/new', { method: 'POST' }); } catch (err) { /* clear locally regardless */ }
         thread.innerHTML = '';
         conversationStarted = false;
+        currentConversationId = null;
         chatMessages.style.display = 'none';
         bottomComposer.style.display = 'none';
+        if (clearConvoBtn) clearConvoBtn.style.display = 'none';
         emptyState.style.display = 'flex';
+        if (!IS_GUEST) highlightActiveConvo(null);
         inputTop.focus();
     }
+
+    async function clearCurrentConversation() {
+        if (!currentConversationId) { startNewChat(); return; }
+        if (!confirm('Clear this conversation? This deletes its saved history.')) return;
+        await deleteConversation(currentConversationId, true);
+        startNewChat();
+    }
+
+    // ── Guest signup modal ────────────────────────────
+    {% if is_guest %}
+    const guestModal = document.getElementById('guestModal');
+    const guestModalClose = document.getElementById('guestModalClose');
+    const guestModalContinue = document.getElementById('guestModalContinue');
+
+    function openGuestModal() {
+        guestModal.classList.add('open');
+    }
+    function closeGuestModal() {
+        guestModal.classList.remove('open');
+    }
+    guestModalClose.addEventListener('click', closeGuestModal);
+    guestModalContinue.addEventListener('click', closeGuestModal);
+    guestModal.addEventListener('click', (e) => { if (e.target === guestModal) closeGuestModal(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeGuestModal(); });
+    {% else %}
+    function openGuestModal() { /* not applicable for authenticated users */ }
+    {% endif %}
+
+    // ── Profile menu (authenticated) ──────────────────
+    {% if not is_guest %}
+    const profileMenuBtn = document.getElementById('profileMenuBtn');
+    const profileDropdown = document.getElementById('profileDropdown');
+    function toggleProfileMenu() {
+        const open = profileDropdown.classList.toggle('open');
+        profileMenuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+    document.addEventListener('click', (e) => {
+        if (profileDropdown.classList.contains('open') && !e.target.closest('.profile-menu')) {
+            profileDropdown.classList.remove('open');
+            profileMenuBtn.setAttribute('aria-expanded', 'false');
+        }
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { profileDropdown.classList.remove('open'); profileMenuBtn.setAttribute('aria-expanded', 'false'); }
+    });
+    {% endif %}
+
+    // ── Conversation history sidebar (authenticated only) ─────────────
+    {% if not is_guest %}
+    const convoList = document.getElementById('convoList');
+    const convoSearch = document.getElementById('convoSearch');
+    let convoSearchTimer = null;
+
+    function highlightActiveConvo(id) {
+        convoList.querySelectorAll('.convo-item').forEach(el => el.classList.toggle('active', el.dataset.id === id));
+    }
+
+    function renderConvoItem(c) {
+        const item = document.createElement('div');
+        item.className = 'convo-item';
+        item.dataset.id = c.conversation_id;
+        item.setAttribute('role', 'listitem');
+        item.innerHTML = `
+            <span class="convo-title" title="${escapeHtml(c.title || 'Untitled')}">${escapeHtml(c.title || 'Untitled')}</span>
+            <div class="convo-actions">
+                <button class="convo-icon-btn" data-tip="Rename" aria-label="Rename conversation" data-action="rename"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg></button>
+                <button class="convo-icon-btn" data-tip="Delete" aria-label="Delete conversation" data-action="delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+            </div>`;
+        item.addEventListener('click', (e) => {
+            if (e.target.closest('.convo-icon-btn')) return;
+            switchConversation(c.conversation_id);
+        });
+        item.querySelector('[data-action="rename"]').addEventListener('click', (e) => { e.stopPropagation(); startRename(item, c); });
+        item.querySelector('[data-action="delete"]').addEventListener('click', (e) => { e.stopPropagation(); deleteConversation(c.conversation_id); });
+        return item;
+    }
+
+    function renderConvoList(items) {
+        convoList.innerHTML = '';
+        if (!items.length) {
+            convoList.innerHTML = '<div class="convo-empty-hint">No conversations yet — start one above.</div>';
+            return;
+        }
+        items.forEach(c => convoList.appendChild(renderConvoItem(c)));
+        highlightActiveConvo(currentConversationId);
+    }
+
+    async function loadConversations() {
+        try {
+            const res = await fetch('/api/conversations');
+            const data = await res.json();
+            renderConvoList(data.conversations || []);
+        } catch (err) { /* leave list as-is */ }
+    }
+
+    convoSearch.addEventListener('input', () => {
+        clearTimeout(convoSearchTimer);
+        const q = convoSearch.value.trim();
+        convoSearchTimer = setTimeout(async () => {
+            if (!q) { loadConversations(); return; }
+            try {
+                const res = await fetch('/api/conversations/search?q=' + encodeURIComponent(q));
+                const data = await res.json();
+                renderConvoList(data.conversations || []);
+            } catch (err) { /* ignore */ }
+        }, 300);
+    });
+
+    function startRename(item, c) {
+        const titleEl = item.querySelector('.convo-title');
+        const input = document.createElement('input');
+        input.className = 'convo-title-input';
+        input.value = c.title || '';
+        titleEl.replaceWith(input);
+        input.focus();
+        input.select();
+        const commit = async () => {
+            const newTitle = input.value.trim();
+            if (newTitle && newTitle !== c.title) {
+                try {
+                    await fetch(`/api/conversations/${c.conversation_id}/rename`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ title: newTitle })
+                    });
+                    c.title = newTitle;
+                } catch (err) { /* keep old title on failure */ }
+            }
+            loadConversations();
+        };
+        input.addEventListener('blur', commit);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') input.blur();
+            if (e.key === 'Escape') { input.value = c.title || ''; input.blur(); }
+        });
+    }
+
+    async function deleteConversation(id, silent) {
+        if (!silent && !confirm('Delete this conversation? This cannot be undone.')) return;
+        try {
+            await fetch(`/api/conversations/${id}/delete`, { method: 'POST' });
+        } catch (err) { /* continue regardless */ }
+        if (id === currentConversationId) {
+            currentConversationId = null;
+            if (!silent) startNewChat();
+        }
+        loadConversations();
+    }
+
+    async function switchConversation(id) {
+        try {
+            const res = await fetch(`/chat/load/${id}`, { method: 'POST' });
+            if (!res.ok) return;
+        } catch (err) { return; }
+        thread.innerHTML = '';
+        conversationStarted = false;
+        currentConversationId = id;
+        await loadHistory();
+        highlightActiveConvo(id);
+    }
+    {% endif %}
 </script>
 
 </body>

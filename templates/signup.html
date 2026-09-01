@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sign up — Itegeko</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ asset_version('css/style.css') }}">
 </head>
 <body class="auth-body">
     <div class="auth-card">
@@ -18,17 +19,19 @@
         {% if error %}<div class="auth-error">{{ error }}</div>{% endif %}
 
         <form method="POST" class="auth-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <label>Name
-                <input type="text" name="name" required autofocus>
+                <input type="text" name="name" required autofocus autocomplete="name">
             </label>
             <label>Email
-                <input type="email" name="email" required>
+                <input type="email" name="email" required autocomplete="email">
             </label>
             <label>Password
-                <input type="password" name="password" required minlength="8">
+                <input type="password" name="password" required minlength="8" autocomplete="new-password">
             </label>
             <button type="submit" class="auth-submit">Sign up</button>
         </form>
+        <p class="auth-legal">By signing up you agree to get general legal information only — not advice from a licensed advocate.</p>
 
         <p class="auth-switch">Already have an account? <a href="{{ url_for('auth.login') }}">Log in</a></p>
     </div>

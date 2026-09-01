@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify email — Itegeko</title>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ asset_version('css/style.css') }}">
+</head>
+<body class="auth-body">
+    <div class="auth-card" style="text-align:center;">
+        <div class="auth-logo" style="justify-content:center;">
+            <div class="logo-emblem">⚖</div>
+            <div class="auth-title">Itegeko</div>
+        </div>
+
+        {% if success %}
+        <div class="verify-icon verify-icon-ok" aria-hidden="true">✓</div>
+        <p class="auth-sub" style="margin-bottom:22px;">Your email address is verified. Thanks!</p>
+        {% else %}
+        <div class="verify-icon verify-icon-error" aria-hidden="true">!</div>
+        <p class="auth-sub" style="margin-bottom:22px;">{{ error }}</p>
+        {% endif %}
+
+        <a href="{{ url_for('home') }}" class="auth-submit pricing-btn">Continue to Itegeko</a>
+    </div>
+</body>
+</html>
