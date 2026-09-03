@@ -122,6 +122,38 @@ SMTP_FROM=noreply@itegeko.rw
 Without these, password reset and email verification both show a plain
 "email isn't configured yet" message instead of erroring.
 
+## Follow-up fixes (after the initial pass)
+
+**Document upload, beyond just the CSRF fix** — checked back through the
+actual upload pipeline, not just the form wrapper:
+- No server-side cap existed on upload size at all (`file.read()` loaded
+  the whole thing into memory first, with nothing stopping an
+  arbitrarily large file). Added `MAX_CONTENT_LENGTH` (30MB) plus a
+  friendly "file too large" flash instead of Flask's default error page.
+- An invalid/corrupted PDF previously fell through to a generic "check
+  the server logs" message. Now raises a clear "that doesn't look like a
+  valid PDF" error instead.
+- `/admin/documents/download/<file_id>` crashed with a 500 on a
+  malformed ID instead of a clean 404.
+
+**Mobile sidebar** — on phone widths the sidebar used to switch to a
+permanent 52px icon strip fixed over the left edge of the chat — it
+couldn't fully go away. Rebuilt as an off-canvas drawer: fully hidden by
+default, opened with one tap via a new hamburger button in the top bar,
+with a backdrop that closes it on tap and on Escape. Picking a
+conversation, a legal area, or "New conversation" from inside the drawer
+now closes it automatically on phone-sized screens.
+
+**Conversation sidebar pagination** — matching how Claude.ai's sidebar
+behaves: `/api/conversations` now takes `limit`/`offset` and returns
+`has_more`, defaulting to 5 per page instead of dumping up to 50 into one
+scrollable box. The sidebar shows the 5 most recent conversations with a
+"Show more" link underneath that loads the next 5 without reloading the
+list you already have open. Renaming updates the item in place; deleting
+removes just that item, both without collapsing the list back down.
+Search still returns its full match set directly (typically small,
+doesn't need paging).
+
 ## Files added
 
 `extensions.py`, `auth_utils.py`, `account.py` (Profile/Settings routes),

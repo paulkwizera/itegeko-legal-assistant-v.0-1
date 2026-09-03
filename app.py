@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 # .env-based local dev ever hit it.
 load_dotenv()
 
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for, Response, stream_with_context
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, Response, stream_with_context, flash
 from google import genai
 from google.genai import types
 from google.genai.errors import APIError, ClientError, ServerError
@@ -43,6 +43,11 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = os.environ.get("FLASK_ENV") == "production"
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
 app.config["WTF_CSRF_TIME_LIMIT"] = 3600  # 1-hour CSRF token validity
+# Gazette PDFs are the only file uploads in the app (admin-only); 30MB
+# comfortably covers even a large scanned gazette while still bounding
+# memory use -- upload_document() reads the whole file into memory, and
+# without this Flask has no server-side cap on request body size at all.
+app.config["MAX_CONTENT_LENGTH"] = 30 * 1024 * 1024
 
 csrf.init_app(app)     # protects every plain HTML <form> POST; JSON-only
                        # endpoints below opt out explicitly with @csrf.exempt
@@ -86,6 +91,14 @@ def asset_version(rel_path):
 
 
 app.jinja_env.globals["asset_version"] = asset_version
+
+
+@app.errorhandler(413)
+def handle_too_large(e):
+    if request.path.startswith("/admin"):
+        flash("That file is too large (30MB max). Try a smaller or re-compressed PDF.", "error")
+        return redirect(url_for("admin.list_documents"))
+    return jsonify({"error": "The upload was too large."}), 413
 
 API_KEY = os.environ.get("GEMINI_API_KEY")
 
@@ -571,22 +584,42 @@ def new_chat():
 
 @app.route("/api/conversations", methods=["GET"])
 def api_conversations():
-    """List the user's conversation history, most recent first."""
+    """List the user's conversation history, most recent first, paginated
+    -- the sidebar shows a short first page (5, by default) with a "Show
+    more" action to page through the rest, rather than dumping everything
+    the account has ever had into one scrollable box."""
     user_id, is_guest = current_identity()
     if db.conversations is None:
-        return jsonify({"conversations": []})
+        return jsonify({"conversations": [], "has_more": False})
+
+    try:
+        limit = int(request.args.get("limit", 5))
+    except ValueError:
+        limit = 5
+    try:
+        offset = int(request.args.get("offset", 0))
+    except ValueError:
+        offset = 0
+    limit = max(1, min(limit, 50))
+    offset = max(0, offset)
+
+    # Fetch one extra row so we can tell whether another page exists
+    # without a second count() round-trip.
     convos = list(
         db.conversations.find(
             {"user_id": user_id},
             {"conversation_id": 1, "title": 1, "updated_at": 1, "_id": 0},
         )
         .sort("updated_at", -1)
-        .limit(50)
+        .skip(offset)
+        .limit(limit + 1)
     )
+    has_more = len(convos) > limit
+    convos = convos[:limit]
     for c in convos:
         if c.get("updated_at"):
             c["updated_at"] = c["updated_at"].isoformat()
-    return jsonify({"conversations": convos})
+    return jsonify({"conversations": convos, "has_more": has_more})
 
 
 @app.route("/api/conversations/<conversation_id>/rename", methods=["POST"])

@@ -57,9 +57,14 @@
         </div>
     </aside>
 
+    <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleSidebar()" aria-hidden="true"></div>
+
     <div class="main">
         <div class="topbar">
             <div class="topbar-left">
+                <button class="topbar-icon-btn mobile-menu-btn" id="mobileMenuBtn" aria-label="Open menu" aria-expanded="false" aria-controls="sidebar" onclick="toggleSidebar()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                </button>
                 {% if not is_guest %}
                 <button class="topbar-icon-btn" id="clearConvoBtn" data-tip="Clear conversation" aria-label="Clear conversation" style="display:none;" onclick="clearCurrentConversation()">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
@@ -190,10 +195,31 @@
     let currentConversationId = null; // set once we know we're viewing a saved conversation
 
     function toggleSidebar(forceOpen) {
-        if (forceOpen === true) { sidebar.classList.add('expanded'); return; }
+        if (forceOpen === true) { sidebar.classList.add('expanded'); syncMobileMenuBtn(); return; }
         sidebar.classList.toggle('expanded');
         if (!sidebar.classList.contains('expanded')) areasList.classList.remove('open');
+        syncMobileMenuBtn();
     }
+
+    function syncMobileMenuBtn() {
+        const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+        if (mobileMenuBtn) mobileMenuBtn.setAttribute('aria-expanded', sidebar.classList.contains('expanded') ? 'true' : 'false');
+    }
+
+    // On phone widths the sidebar is a full-screen drawer, so once someone
+    // taps something inside it (new chat, a legal area, a past
+    // conversation) it should get out of the way on its own rather than
+    // making them close it manually every time.
+    function closeSidebarOnMobile() {
+        if (window.innerWidth <= 768 && sidebar.classList.contains('expanded')) {
+            sidebar.classList.remove('expanded');
+            areasList.classList.remove('open');
+            syncMobileMenuBtn();
+        }
+    }
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && sidebar.classList.contains('expanded')) toggleSidebar();
+    });
 
     function toggleAreasList(forceOpen) {
         if (!sidebar.classList.contains('expanded')) sidebar.classList.add('expanded');
@@ -215,6 +241,7 @@
     sendBot.addEventListener('click', () => handleSend(inputBot));
 
     function askTopic(text) {
+        closeSidebarOnMobile();
         showConversation();
         sendMessage(text);
     }
@@ -572,6 +599,7 @@
     });
 
     async function startNewChat() {
+        closeSidebarOnMobile();
         try { await fetch('/chat/new', { method: 'POST' }); } catch (err) { /* clear locally regardless */ }
         thread.innerHTML = '';
         conversationStarted = false;
@@ -636,6 +664,10 @@
     const convoSearch = document.getElementById('convoSearch');
     let convoSearchTimer = null;
 
+    const CONVO_PAGE_SIZE = 5;
+    let convoOffset = 0;
+    let convoIsSearching = false;
+
     function highlightActiveConvo(id) {
         convoList.querySelectorAll('.convo-item').forEach(el => el.classList.toggle('active', el.dataset.id === id));
     }
@@ -660,22 +692,66 @@
         return item;
     }
 
-    function renderConvoList(items) {
-        convoList.innerHTML = '';
-        if (!items.length) {
-            convoList.innerHTML = '<div class="convo-empty-hint">No conversations yet — start one above.</div>';
-            return;
+    function getOrCreateMoreBtn() {
+        let btn = document.getElementById('convoMoreBtn');
+        if (!btn) {
+            btn = document.createElement('button');
+            btn.id = 'convoMoreBtn';
+            btn.type = 'button';
+            btn.className = 'convo-more-btn';
+            btn.textContent = 'Show more';
+            btn.addEventListener('click', () => convoIsSearching ? null : loadMoreConversations());
+            convoList.appendChild(btn);
         }
-        items.forEach(c => convoList.appendChild(renderConvoItem(c)));
+        return btn;
+    }
+
+    function setMoreButton(hasMore) {
+        const btn = getOrCreateMoreBtn();
+        convoList.appendChild(btn); // keep it pinned as the last element
+        btn.style.display = hasMore ? 'block' : 'none';
+        btn.disabled = false;
+        btn.textContent = 'Show more';
+    }
+
+    function renderConvoItems(items, { append } = {}) {
+        if (!append) {
+            convoList.innerHTML = '';
+            if (!items.length) {
+                convoList.innerHTML = '<div class="convo-empty-hint">No conversations yet — start one above.</div>';
+                return;
+            }
+        }
+        items.forEach(c => convoList.insertBefore(renderConvoItem(c), document.getElementById('convoMoreBtn')));
         highlightActiveConvo(currentConversationId);
     }
 
     async function loadConversations() {
+        convoIsSearching = false;
+        convoOffset = 0;
         try {
-            const res = await fetch('/api/conversations');
+            const res = await fetch(`/api/conversations?limit=${CONVO_PAGE_SIZE}&offset=0`);
             const data = await res.json();
-            renderConvoList(data.conversations || []);
+            const items = data.conversations || [];
+            renderConvoItems(items, { append: false });
+            convoOffset = items.length;
+            if (items.length) setMoreButton(!!data.has_more);
         } catch (err) { /* leave list as-is */ }
+    }
+
+    async function loadMoreConversations() {
+        const btn = document.getElementById('convoMoreBtn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
+        try {
+            const res = await fetch(`/api/conversations?limit=${CONVO_PAGE_SIZE}&offset=${convoOffset}`);
+            const data = await res.json();
+            const items = data.conversations || [];
+            renderConvoItems(items, { append: true });
+            convoOffset += items.length;
+            setMoreButton(!!data.has_more);
+        } catch (err) {
+            if (btn) { btn.disabled = false; btn.textContent = 'Show more'; }
+        }
     }
 
     convoSearch.addEventListener('input', () => {
@@ -683,10 +759,13 @@
         const q = convoSearch.value.trim();
         convoSearchTimer = setTimeout(async () => {
             if (!q) { loadConversations(); return; }
+            convoIsSearching = true;
             try {
                 const res = await fetch('/api/conversations/search?q=' + encodeURIComponent(q));
                 const data = await res.json();
-                renderConvoList(data.conversations || []);
+                const items = data.conversations || [];
+                renderConvoItems(items, { append: false });
+                if (items.length) setMoreButton(false); // search returns its full match set directly, no paging
             } catch (err) { /* ignore */ }
         }, 300);
     });
@@ -701,6 +780,7 @@
         input.select();
         const commit = async () => {
             const newTitle = input.value.trim();
+            let finalTitle = c.title || 'Untitled';
             if (newTitle && newTitle !== c.title) {
                 try {
                     await fetch(`/api/conversations/${c.conversation_id}/rename`, {
@@ -708,9 +788,14 @@
                         body: JSON.stringify({ title: newTitle })
                     });
                     c.title = newTitle;
+                    finalTitle = newTitle;
                 } catch (err) { /* keep old title on failure */ }
             }
-            loadConversations();
+            const span = document.createElement('span');
+            span.className = 'convo-title';
+            span.title = finalTitle;
+            span.textContent = finalTitle;
+            input.replaceWith(span);
         };
         input.addEventListener('blur', commit);
         input.addEventListener('keydown', (e) => {
@@ -724,14 +809,24 @@
         try {
             await fetch(`/api/conversations/${id}/delete`, { method: 'POST' });
         } catch (err) { /* continue regardless */ }
+        const item = convoList.querySelector(`.convo-item[data-id="${id}"]`);
+        if (item) item.remove();
+        if (!convoList.querySelector('.convo-item')) {
+            const moreBtn = document.getElementById('convoMoreBtn');
+            if (moreBtn && moreBtn.style.display !== 'none') {
+                loadConversations(); // list emptied but more exist server-side -- refill page 1
+            } else {
+                convoList.innerHTML = '<div class="convo-empty-hint">No conversations yet — start one above.</div>';
+            }
+        }
         if (id === currentConversationId) {
             currentConversationId = null;
             if (!silent) startNewChat();
         }
-        loadConversations();
     }
 
     async function switchConversation(id) {
+        closeSidebarOnMobile();
         try {
             const res = await fetch(`/chat/load/${id}`, { method: 'POST' });
             if (!res.ok) return;

@@ -35,8 +35,16 @@ def _get_fs():
 
 
 def _extract_text(file_bytes):
-    reader = PdfReader(io.BytesIO(file_bytes))
-    pages = [page.extract_text() or "" for page in reader.pages]
+    try:
+        reader = PdfReader(io.BytesIO(file_bytes))
+        pages = [page.extract_text() or "" for page in reader.pages]
+    except Exception as e:
+        # Covers pypdf's PdfReadError/PdfStreamError/EmptyFileError and any
+        # other "this isn't actually a valid PDF" case -- surfaced as a
+        # ValueError so admin.py's existing `except ValueError` path shows
+        # it as a clear flash message instead of a generic 500-style
+        # "check the server logs" error.
+        raise ValueError("That file doesn't appear to be a valid, readable PDF.") from e
     return "\n\n".join(pages).strip()
 
 

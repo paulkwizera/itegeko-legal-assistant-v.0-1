@@ -76,7 +76,12 @@ def delete_document():
 @admin_required
 def download_document(file_id):
     from bson import ObjectId
-    grid_out = gazette.get_pdf_file(ObjectId(file_id))
+    from bson.errors import InvalidId
+    try:
+        object_id = ObjectId(file_id)
+    except InvalidId:
+        return "File not found", 404
+    grid_out = gazette.get_pdf_file(object_id)
     if grid_out is None:
         return "File not found", 404
     return send_file(
