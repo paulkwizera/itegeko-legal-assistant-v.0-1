@@ -7,6 +7,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ asset_version('css/style.css') }}">
+    <script src="{{ url_for('static', filename='js/auth.js') }}?v={{ asset_version('js/auth.js') }}" defer></script>
 </head>
 <body class="auth-body">
     <div class="auth-card">
@@ -24,7 +25,13 @@
                 <input type="email" name="email" required autofocus autocomplete="email">
             </label>
             <label>Password
-                <input type="password" name="password" required autocomplete="current-password">
+                <div class="password-field">
+                    <input type="password" name="password" required autocomplete="current-password">
+                    <button type="button" class="password-toggle-btn" aria-label="Show password" onclick="togglePasswordVisibility(this)">
+                        <svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        <svg class="eye-off-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.5 18.5 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                    </button>
+                </div>
             </label>
             <button type="submit" class="auth-submit">Log in</button>
         </form>

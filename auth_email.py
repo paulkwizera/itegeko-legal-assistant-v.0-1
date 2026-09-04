@@ -171,8 +171,10 @@ def reset_password(token):
 # ---------------------------------------------------------------------------
 
 def send_verification_email(user_id, email, name=""):
-    """Generate a fresh verification token and email it. Raises on failure
-    (caller decides how to handle -- e.g. signup logs it and continues)."""
+    """Sent right after signup -- doubles as the welcome email (rather than
+    sending two separate emails back-to-back) and as the address
+    verification link. Generates a fresh token. Raises on failure (caller
+    decides how to handle -- e.g. signup logs it and continues)."""
     token = _generate_token(user_id, "email_verification")
     if not token:
         return
@@ -180,14 +182,16 @@ def send_verification_email(user_id, email, name=""):
     greeting = f"Hi {name}," if name else "Hi,"
     _send_email(
         email,
-        "Verify your Itegeko email address",
+        "Welcome to Itegeko — verify your email",
         f"""
         <div style="font-family: Inter, sans-serif; max-width: 480px; margin: 0 auto; padding: 20px;">
-            <h2 style="color: #c9a84c;">Verify your email</h2>
+            <h2 style="color: #c9a84c;">Welcome to Itegeko</h2>
             <p>{greeting}</p>
-            <p>Please confirm this is your email address to finish setting up your Itegeko account:</p>
+            <p>Thanks for creating an account. Itegeko can help you understand Rwandan law, review a contract or
+            document you upload, and point you to a real advocate when you need one.</p>
+            <p>One last step -- please confirm this is your email address:</p>
             <p><a href="{verify_url}" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #c9a84c, #e8c96d); color: #14171c; text-decoration: none; border-radius: 8px; font-weight: 600;">Verify Email</a></p>
-            <p style="font-size: 0.85em; color: #666;">This link expires in {TOKEN_EXPIRY_HOURS} hour(s). If you didn't create an Itegeko account, you can ignore this email.</p>
+            <p style="font-size: 0.85em; color: #666;">This link expires in {TOKEN_EXPIRY_HOURS} hour(s). Your account already works without verifying -- this just confirms the address is really yours. If you didn't create an Itegeko account, you can ignore this email.</p>
         </div>
         """,
     )

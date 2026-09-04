@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Law Firm Directory — Itegeko Admin</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ asset_version('css/style.css') }}">
+</head>
+<body class="admin-body">
+    <div class="admin-wrap">
+        <div class="admin-header">
+            <div class="admin-title">Law Firm Directory</div>
+            <a href="{{ url_for('home') }}" class="admin-back">&larr; Back to Itegeko</a>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% for category, message in messages %}
+                <div class="admin-flash {{ 'admin-flash-error' if category == 'error' else 'admin-flash-success' }}">{{ message }}</div>
+            {% endfor %}
+        {% endwith %}
+
+        <div class="admin-card">
+            <div class="admin-card-title">Add a firm</div>
+            <p class="admin-hint">Shown publicly on the <a href="{{ url_for('lawyers') }}" class="admin-link" target="_blank">Find a Lawyer</a> page. There's no edit yet -- to correct an entry, delete it and add it again.</p>
+            <form method="POST" action="{{ url_for('admin.add_firm') }}" class="admin-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <label>Firm name
+                    <input type="text" name="name" required placeholder="Rubangura &amp; Associates">
+                </label>
+                <label>Phone number
+                    <input type="text" name="phone" required placeholder="+250 788 000 000">
+                </label>
+                <label>Address
+                    <input type="text" name="address" required placeholder="KG 7 Ave, Kigali">
+                </label>
+                <label>Email (optional)
+                    <input type="email" name="email" placeholder="info@firm.rw">
+                </label>
+                <label>Website (optional)
+                    <input type="text" name="website" placeholder="https://firm.rw">
+                </label>
+                <label>Specialty (optional)
+                    <input type="text" name="specialty" placeholder="Corporate &amp; commercial law">
+                </label>
+                <label>Short description (optional)
+                    <textarea name="description" rows="2" placeholder="A brief note shown under the firm's name."></textarea>
+                </label>
+                <button type="submit" class="auth-submit">Add firm</button>
+            </form>
+        </div>
+
+        <div class="admin-card">
+            <div class="admin-card-title">Currently listed ({{ firms_list|length }})</div>
+            {% if firms_list %}
+            <table class="admin-table">
+                <thead>
+                    <tr><th>Name</th><th>Phone</th><th>Address</th><th>Specialty</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {% for f in firms_list %}
+                    <tr>
+                        <td>{{ f.name }}</td>
+                        <td>{{ f.phone }}</td>
+                        <td>{{ f.address }}</td>
+                        <td>{{ f.specialty or '—' }}</td>
+                        <td>
+                            <form method="POST" action="{{ url_for('admin.delete_firm') }}" onsubmit="return confirm('Remove this firm from the directory?');" class="admin-inline-form">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="firm_id" value="{{ f._id }}">
+                                <button type="submit" class="admin-delete-btn">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="admin-hint">No firms listed yet.</p>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

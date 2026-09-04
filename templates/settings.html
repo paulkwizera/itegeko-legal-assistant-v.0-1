@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ asset_version('css/style.css') }}">
+    <script src="{{ url_for('static', filename='js/auth.js') }}?v={{ asset_version('js/auth.js') }}" defer></script>
 </head>
 <body class="account-body">
     <div class="account-wrap">
@@ -44,10 +45,22 @@
             <form method="POST" action="{{ url_for('account.change_password') }}" class="admin-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <label>Current password
-                    <input type="password" name="current_password" required autocomplete="current-password">
+                    <div class="password-field">
+                        <input type="password" name="current_password" required autocomplete="current-password">
+                        <button type="button" class="password-toggle-btn" aria-label="Show password" onclick="togglePasswordVisibility(this)">
+                            <svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                            <svg class="eye-off-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.5 18.5 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                        </button>
+                    </div>
                 </label>
                 <label>New password
-                    <input type="password" name="new_password" required minlength="8" autocomplete="new-password">
+                    <div class="password-field">
+                        <input type="password" name="new_password" required minlength="8" autocomplete="new-password">
+                        <button type="button" class="password-toggle-btn" aria-label="Show password" onclick="togglePasswordVisibility(this)">
+                            <svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                            <svg class="eye-off-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.5 18.5 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                        </button>
+                    </div>
                 </label>
                 <button type="submit" class="auth-submit" style="align-self:flex-start; padding-left:20px; padding-right:20px;">Change password</button>
             </form>
@@ -66,6 +79,23 @@
                 <button type="submit" class="auth-secondary" style="width:auto; padding-left:18px; padding-right:18px;">Resend verification email</button>
             </form>
             {% endif %}
+        </div>
+
+        <div class="account-card">
+            <div class="account-card-title">Email &amp; data preferences</div>
+            {% if preferences_success %}<div class="auth-success">{{ preferences_success }}</div>{% endif %}
+            <form method="POST" action="{{ url_for('account.update_preferences') }}" class="admin-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <label class="consent-field">
+                    <input type="checkbox" name="marketing_consent" {{ 'checked' if user.marketing_consent }}>
+                    <span>Send me occasional emails about new features and offers.</span>
+                </label>
+                <label class="consent-field">
+                    <input type="checkbox" name="training_consent" {{ 'checked' if user.training_consent }}>
+                    <span>My conversations may be used to help improve and train Itegeko's AI models in the future. See the <a href="{{ url_for('privacy') }}" target="_blank">Privacy Policy</a>.</span>
+                </label>
+                <button type="submit" class="auth-submit" style="align-self:flex-start; padding-left:20px; padding-right:20px; margin-top: 4px;">Save preferences</button>
+            </form>
         </div>
 
         <div class="account-card">

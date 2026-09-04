@@ -26,10 +26,12 @@ gazette = None
 payments = None
 conversations = None
 tokens = None
+attachments = None
+firms = None
 
 
 def init_db():
-    global client, db, users, messages, gazette, payments, conversations, tokens
+    global client, db, users, messages, gazette, payments, conversations, tokens, attachments, firms
 
     if not MONGODB_URI:
         logger.warning("MONGODB_URI not set -- accounts, chat history, and gazette search are disabled.")
@@ -45,6 +47,8 @@ def init_db():
         new_payments = new_db.payments
         new_conversations = new_db.conversations
         new_tokens = new_db.tokens
+        new_attachments = new_db.attachments
+        new_firms = new_db.firms
 
         # Indexes are idempotent -- safe to call every startup.
         new_users.create_index("email", unique=True)
@@ -63,6 +67,10 @@ def init_db():
         # Password reset / email verification tokens with TTL (auto-expire after 1 hour)
         new_tokens.create_index("token", unique=True)
         new_tokens.create_index("expires_at", expireAfterSeconds=0)
+        # Attachment upload counting is a lifetime count per user -- this is
+        # the only query shape it needs.
+        new_attachments.create_index("user_id")
+        new_firms.create_index("name")
 
         # Confirms the URI/credentials/network access actually work, rather
         # than only discovering a bad connection on the first real request.
@@ -75,25 +83,30 @@ def init_db():
         # app down -- it should just come up with accounts/history/gazette
         # disabled until the next restart (or a manual retry) succeeds.
         logger.exception("Could not connect to MongoDB at startup -- accounts, chat history, and gazette search are disabled for this process.")
-        client = db = users = messages = gazette = payments = conversations = tokens = None
+        client = db = users = messages = gazette = payments = conversations = tokens = attachments = firms = None
         return
 
     client, db = new_client, new_db
     users, messages, gazette = new_users, new_messages, new_gazette
     payments, conversations, tokens = new_payments, new_conversations, new_tokens
+    attachments, firms = new_attachments, new_firms
     logger.info("Connected to MongoDB database '%s'", MONGODB_DB_NAME)
 
 
 def migrate_guest_messages(guest_id, user_id):
     """Called right after a guest signs up or logs in -- re-labels any chat
-    history they built up anonymously (stored under 'guest:<guest_id>') so it
-    becomes part of their new account's history instead of being lost."""
+    history (and attachment-upload records, which count toward the free
+    upload allowance) they built up anonymously (stored under
+    'guest:<guest_id>') so it becomes part of their new account instead of
+    being lost or -- for attachments specifically -- silently resetting
+    their free allowance back to zero."""
     if messages is None or not guest_id:
         return
     messages.update_many({"user_id": f"guest:{guest_id}"}, {"$set": {"user_id": user_id}})
-    # Also migrate any conversation records
     if conversations is not None:
         conversations.update_many({"user_id": f"guest:{guest_id}"}, {"$set": {"user_id": user_id}})
+    if attachments is not None:
+        attachments.update_many({"user_id": f"guest:{guest_id}"}, {"$set": {"user_id": user_id}})
 
 
 init_db()

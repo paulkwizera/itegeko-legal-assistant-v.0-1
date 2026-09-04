@@ -65,6 +65,9 @@ def signup():
     name = (request.form.get("name") or "").strip()
     email = (request.form.get("email") or "").strip().lower()
     password = request.form.get("password") or ""
+    terms_accepted = request.form.get("terms_accepted") == "on"
+    marketing_consent = request.form.get("marketing_consent") == "on"
+    training_consent = request.form.get("training_consent") == "on"
 
     if db.users is None:
         return render_template("signup.html", error="Accounts aren't configured yet (no database connection).")
@@ -75,6 +78,8 @@ def signup():
         return render_template("signup.html", error="That doesn't look like a valid email address.")
     if len(password) < 8:
         return render_template("signup.html", error="Password must be at least 8 characters.")
+    if not terms_accepted:
+        return render_template("signup.html", error="Please agree to the Terms of Service and Privacy Policy to continue.")
 
     try:
         result = db.users.insert_one({
@@ -88,6 +93,9 @@ def signup():
             "email_verified": False,
             "profile": {},
             "created_at": datetime.now(timezone.utc),
+            "terms_accepted_at": datetime.now(timezone.utc),
+            "marketing_consent": marketing_consent,
+            "training_consent": training_consent,
         })
     except DuplicateKeyError:
         return render_template("signup.html", error="An account with that email already exists.")

@@ -31,6 +31,11 @@
             <span class="nav-label">Legal areas</span>
         </button>
 
+        <a class="nav-item" data-tip="Find a lawyer" href="{{ url_for('lawyers') }}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 7v2h18V7l-9-5z"/><path d="M4 11v8M9 11v8M15 11v8M20 11v8"/><path d="M2 21h20"/></svg>
+            <span class="nav-label">Find a lawyer</span>
+        </a>
+
         <div class="areas-list" id="areasList">
             <div class="area-item" onclick="askTopic('What does the Constitution of Rwanda say about fundamental rights?')">📜 Constitutional Law</div>
             <div class="area-item" onclick="askTopic('Explain the criminal justice process in Rwanda.')">⚖ Criminal Law</div>
@@ -87,7 +92,10 @@
                         <svg class="profile-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
                     </button>
                     <div class="profile-dropdown" id="profileDropdown" role="menu">
-                        {% if is_admin %}<a href="{{ url_for('admin.list_documents') }}" role="menuitem">Admin documents</a>{% endif %}
+                        {% if is_admin %}
+                        <a href="{{ url_for('admin.list_documents') }}" role="menuitem">Admin documents</a>
+                        <a href="{{ url_for('admin.list_firms') }}" role="menuitem">Manage law firms</a>
+                        {% endif %}
                         <a href="{{ url_for('account.profile') }}" role="menuitem">Profile <span class="plan-badge {{ 'plan-badge-pro' if plan == 'pro' else 'plan-badge-free' }}">{{ plan|capitalize }}</span></a>
                         <a href="{{ url_for('account.settings') }}" role="menuitem">Settings</a>
                         <div class="profile-dropdown-divider"></div>
@@ -105,9 +113,13 @@
             <div class="greeting">{{ 'Hi ' + user_name + ', let' if user_name else "Hi there, let" }}'s talk <span>Rwandan law</span></div>
             <div class="greeting-sub">Ask about legislation, court procedure, or your rights — Itegeko answers with the relevant Rwandan law, act, or article.</div>
             <div class="composer-wrap">
+                <div class="attach-preview" id="attachPreviewTop" style="display:none;"></div>
                 <div class="composer">
                     <button class="composer-icon-btn" data-tip="Legal areas" aria-label="Browse legal areas" onclick="toggleSidebar(true); toggleAreasList(true);">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    </button>
+                    <button class="composer-icon-btn" id="attachBtnTop" data-tip="Attach a file" aria-label="Attach a photo, PDF, or audio file" onclick="triggerAttachPicker()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05 12.25 20.24a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                     </button>
                     <textarea id="userInputTop" class="composer-input" placeholder="Ask about Rwandan law" rows="1" maxlength="4000" aria-label="Ask about Rwandan law"></textarea>
                     <button class="send-btn" id="sendBtnTop" title="Send" aria-label="Send message">
@@ -144,9 +156,13 @@
 
         <div class="bottom-composer" id="bottomComposer" style="display:none;">
             <div class="composer-wrap">
+                <div class="attach-preview" id="attachPreviewBottom" style="display:none;"></div>
                 <div class="composer">
                     <button class="composer-icon-btn" data-tip="Legal areas" aria-label="Browse legal areas" onclick="toggleSidebar(true); toggleAreasList(true);">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    </button>
+                    <button class="composer-icon-btn" id="attachBtnBottom" data-tip="Attach a file" aria-label="Attach a photo, PDF, or audio file" onclick="triggerAttachPicker()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05 12.25 20.24a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                     </button>
                     <textarea id="userInput" class="composer-input" placeholder="Ask about Rwandan law" rows="1" maxlength="4000" aria-label="Ask about Rwandan law"></textarea>
                     <button class="send-btn" id="sendBtn" title="Send" aria-label="Send message">
@@ -157,6 +173,10 @@
             </div>
         </div>
     </div>
+
+    <input type="file" id="attachInput" style="display:none;"
+           accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf,audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/ogg,audio/flac,audio/webm,audio/x-m4a"
+           onchange="handleAttachFileSelected(event)">
 
     {% if is_guest %}
     <div class="modal-overlay" id="guestModal" role="dialog" aria-modal="true" aria-labelledby="guestModalTitle">
@@ -193,6 +213,111 @@
 
     let conversationStarted = false;
     let currentConversationId = null; // set once we know we're viewing a saved conversation
+
+    // ── Attachments (photo / PDF / audio) ─────────────
+    const attachInput = document.getElementById('attachInput');
+    let pendingAttachment = null; // a File object, or null
+    let attachmentsRemaining = null; // null = unknown yet; Infinity for Pro
+
+    const ATTACHMENT_MAX_BYTES = 15 * 1024 * 1024;
+    const ATTACHMENT_KIND_ICON = { image: '🖼', pdf: '📄', audio: '🎤' };
+
+    function attachmentKindFor(mimeType) {
+        if (mimeType.startsWith('image/')) return 'image';
+        if (mimeType === 'application/pdf') return 'pdf';
+        if (mimeType.startsWith('audio/')) return 'audio';
+        return 'pdf';
+    }
+
+    function triggerAttachPicker() {
+        if (attachmentsRemaining !== null && attachmentsRemaining <= 0) {
+            openAttachmentLimitCard();
+            return;
+        }
+        attachInput.click();
+    }
+
+    function handleAttachFileSelected(event) {
+        const file = event.target.files && event.target.files[0];
+        event.target.value = ''; // allow re-selecting the same file later
+        if (!file) return;
+
+        const kind = attachmentKindFor(file.type || '');
+        if (!file.type || (!file.type.startsWith('image/') && file.type !== 'application/pdf' && !file.type.startsWith('audio/'))) {
+            alert("That file type isn't supported. Please attach a photo, a PDF, or an audio file.");
+            return;
+        }
+        if (file.size > ATTACHMENT_MAX_BYTES) {
+            alert('That file is too large (15MB max).');
+            return;
+        }
+        pendingAttachment = file;
+        updateAttachPreview();
+    }
+
+    function removePendingAttachment() {
+        pendingAttachment = null;
+        updateAttachPreview();
+    }
+
+    function attachmentChipHtml(filename, kind, onRemoveAttr) {
+        const icon = ATTACHMENT_KIND_ICON[kind] || '📄';
+        return `<div class="attach-chip">
+            <span class="attach-chip-icon" aria-hidden="true">${icon}</span>
+            <span class="attach-chip-name">${escapeHtml(filename)}</span>
+            ${onRemoveAttr ? `<button type="button" class="attach-chip-remove" aria-label="Remove attachment" onclick="removePendingAttachment()">✕</button>` : ''}
+        </div>`;
+    }
+
+    function updateAttachPreview() {
+        const previews = [document.getElementById('attachPreviewTop'), document.getElementById('attachPreviewBottom')];
+        previews.forEach(el => {
+            if (!el) return;
+            if (pendingAttachment) {
+                const kind = attachmentKindFor(pendingAttachment.type || '');
+                el.innerHTML = attachmentChipHtml(pendingAttachment.name, kind, true);
+                el.style.display = 'block';
+            } else {
+                el.innerHTML = '';
+                el.style.display = 'none';
+            }
+        });
+    }
+
+    function updateAttachButtonState() {
+        const disabled = attachmentsRemaining !== null && attachmentsRemaining <= 0;
+        [document.getElementById('attachBtnTop'), document.getElementById('attachBtnBottom')].forEach(btn => {
+            if (!btn) return;
+            btn.classList.toggle('exhausted', disabled);
+            btn.setAttribute('data-tip', disabled ? 'Free uploads used — upgrade for more' : 'Attach a file');
+        });
+    }
+
+    async function refreshAttachmentAllowance() {
+        try {
+            const res = await fetch('/api/usage');
+            const data = await res.json();
+            if (data.plan === 'pro') {
+                attachmentsRemaining = Infinity;
+            } else if (typeof data.attachments_used === 'number' && typeof data.attachments_limit === 'number') {
+                attachmentsRemaining = Math.max(0, data.attachments_limit - data.attachments_used);
+            }
+            updateAttachButtonState();
+        } catch (err) { /* leave attach button enabled if usage can't be fetched */ }
+    }
+
+    function openAttachmentLimitCard() {
+        showConversation();
+        const typingId = appendTypingRow();
+        renderLimitCard(typingId, {
+            error: "You've used all 3 free document uploads." + (IS_GUEST
+                ? ' Sign up and upgrade to Itegeko Pro for unlimited uploads.'
+                : ' Upgrade to Itegeko Pro for unlimited uploads.'),
+            limit_type: 'attachment',
+            upgrade_url: '/pricing',
+            signup_url: '/signup',
+        }, IS_GUEST);
+    }
 
     function toggleSidebar(forceOpen) {
         if (forceOpen === true) { sidebar.classList.add('expanded'); syncMobileMenuBtn(); return; }
@@ -258,11 +383,14 @@
 
     function handleSend(sourceEl) {
         const text = sourceEl.value.trim();
-        if (!text) return;
+        const attachment = pendingAttachment;
+        if (!text && !attachment) return;
         sourceEl.value = '';
         autoResize(sourceEl);
         showConversation();
-        sendMessage(text);
+        pendingAttachment = null;
+        updateAttachPreview();
+        sendMessage(text, false, attachment);
     }
 
     // ── Markdown rendering (headings, bold/italic, inline code, fenced
@@ -350,11 +478,18 @@
         chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 
-    function appendUserMessage(text) {
+    function appendUserMessage(text, attachment) {
         const row = document.createElement('div');
         row.className = 'message-row user-row';
-        row.innerHTML = `<div class="user-bubble"></div>`;
-        row.querySelector('.user-bubble').textContent = text;
+        if (attachment) {
+            row.innerHTML = attachmentChipHtml(attachment.filename, attachment.kind, false);
+        }
+        if (text) {
+            const bubble = document.createElement('div');
+            bubble.className = 'user-bubble';
+            bubble.textContent = text;
+            row.appendChild(bubble);
+        }
         thread.appendChild(row);
         scrollToBottom();
     }
@@ -424,10 +559,21 @@
         const row = document.getElementById(typingId);
         if (!row) return;
         row.innerHTML = '';
-        const isDaily = data.limit_type !== 'weekly';
-        const title = isGuest ? "You've reached today's guest limit" : (isDaily ? "You've reached today's free prompt limit" : "You've reached your weekly free limit");
+        let title;
+        if (data.limit_type === 'attachment') {
+            title = "You've used your free document uploads";
+        } else if (isGuest) {
+            title = "You've reached today's guest limit";
+        } else if (data.limit_type === 'weekly') {
+            title = "You've reached your weekly free limit";
+        } else {
+            title = "You've reached today's free prompt limit";
+        }
         let actionsHtml = '';
-        if (isGuest) {
+        if (data.limit_type === 'attachment') {
+            actionsHtml = `<a href="${data.upgrade_url || '/pricing'}" class="limit-primary">Upgrade to Pro</a>`
+                + (isGuest ? `<a href="${data.signup_url || '/signup'}" class="limit-secondary">Sign Up</a>` : '');
+        } else if (isGuest) {
             actionsHtml = `<a href="${data.signup_url || '/signup'}" class="limit-primary">Sign Up</a><a href="/login" class="limit-secondary">Login</a>`;
         } else {
             actionsHtml = `<a href="${data.upgrade_url || '/pricing'}" class="limit-primary">Upgrade to Pro</a>`;
@@ -471,20 +617,29 @@
         };
     }
 
-    async function sendMessage(text, isRetry = false) {
-        if (!text) return;
-        if (!isRetry) appendUserMessage(text);
+    async function sendMessage(text, isRetry = false, attachment = null) {
+        if (!text && !attachment) return;
+        if (!isRetry) appendUserMessage(text, attachment ? { filename: attachment.name, kind: attachmentKindFor(attachment.type || '') } : null);
 
         const typingId = appendTypingRow();
         let streamer = null;
         let textEl = null;
 
         try {
-            const res = await fetch('/chat/stream', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: text })
-            });
+            let fetchOptions;
+            if (attachment) {
+                const formData = new FormData();
+                formData.append('message', text);
+                formData.append('file', attachment);
+                fetchOptions = { method: 'POST', body: formData };
+            } else {
+                fetchOptions = {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text })
+                };
+            }
+            const res = await fetch('/chat/stream', fetchOptions);
 
             if (!res.ok) {
                 const data = await res.json().catch(() => ({}));
@@ -560,6 +715,7 @@
 
             if (doneConversationId) currentConversationId = doneConversationId;
             if (!IS_GUEST) { loadConversations(); }
+            if (attachment) refreshAttachmentAllowance();
             if (showSignup) openGuestModal();
 
         } catch (err) {
@@ -569,7 +725,7 @@
 
     function renderStoredMessage(item) {
         if (item.role === 'user') {
-            appendUserMessage(item.text);
+            appendUserMessage(item.text, item.attachment || null);
         } else {
             const typingId = appendTypingRow();
             replaceTypingWithReply(typingId, item.text, false, null, null);
@@ -596,6 +752,7 @@
     window.addEventListener('DOMContentLoaded', () => {
         loadHistory();
         if (!IS_GUEST) loadConversations();
+        refreshAttachmentAllowance();
     });
 
     async function startNewChat() {

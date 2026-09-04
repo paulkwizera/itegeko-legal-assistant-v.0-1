@@ -161,6 +161,72 @@ doesn't need paging).
 `templates/verify_email.html`, `templates/profile.html`,
 `templates/settings.html`.
 
+## Second round: file/audio upload, lawyer directory, consent & email
+
+**Contract/photo/audio upload in chat** — you can now attach a photo, PDF,
+or audio file to a message (paperclip icon in the composer) and Gemini
+reads it natively as multimodal input — no separate OCR/transcription
+step. When a document is attached, Itegeko is instructed to summarize it,
+assess viability/enforceability under Rwandan law, flag risky or
+one-sided clauses, and cite relevant law — a direct "upload a contract,
+ask if it's viable" flow. Free and guest accounts get **3 uploads total,
+for the life of the account** (not daily/weekly like messages) before
+being asked to upgrade; Pro is effectively unlimited. Limits are enforced
+server-side (`plans.attachments_used`/`attachment_limit_for`), not just
+hidden in the UI. One real constraint worth knowing: the original file
+bytes aren't kept anywhere after that turn (only filename/type, so the
+allowance can be tracked and the chip can be redrawn on reload) — if the
+in-memory chat session gets rebuilt later (e.g. after a restart), Gemini
+can no longer "see" that specific file again, only a text note that one
+was attached. If you want attachments to stay fully re-viewable later,
+that's a reasonable follow-up (store the bytes in GridFS like gazette
+PDFs already do) but wasn't built here to keep scope matched to what was
+asked.
+
+**Law firm directory** — new "Find a lawyer" tab in the sidebar (public,
+no login needed) links to `/lawyers`, a directory of real firms with
+phone/address/specialty. Admin-managed only: `/admin/firms` lets an admin
+add a firm (name, phone, and address required; email/website/specialty/
+description optional) or remove one — no public submission path, no edit
+yet (delete and re-add to correct an entry, matching what was asked).
+
+**Password show/hide** — every password field (login, signup, reset
+password, change password in Settings) now has an eye icon that toggles
+between hidden and plain text while typing. One shared `static/js/auth.js`
+rather than four copies of the same code.
+
+**Terms of Service + Privacy Policy pages** — these didn't exist before,
+so a "you must agree to our Terms" checkbox had nothing real to link to.
+Added `/terms` and `/privacy` with real, substantive content (not just
+placeholders) — the Privacy Policy specifically covers marketing email
+and the future-AI-training consent described below. Worth having an
+actual advocate review both before a real launch, same as any ToS/Privacy
+page.
+
+**Signup consent** — three checkboxes now on signup: agreeing to the
+Terms/Privacy (required to create an account), an opt-in for occasional
+marketing email, and a separate opt-in for conversations potentially
+being used to help train Itegeko's models in the future. All three are
+stored on the user record (`terms_accepted_at`, `marketing_consent`,
+`training_consent`); the two opt-ins can be changed any time afterward
+from Settings → "Email & data preferences" (new). Kept as two *separate*
+checkboxes rather than one combined one — email communication preference
+and data-usage rights are different kinds of consent, and bundling them
+would make it impossible to opt into one without the other.
+
+**Welcome email** — the existing verification email (sent at signup, only
+when SMTP is configured) now doubles as a welcome email rather than
+sending two separate emails back-to-back: warmer copy, a short "here's
+what you can do" note, then the verification link. Verifying stays
+optional/non-blocking as before — this only changes the email's content,
+not when or whether it's sent.
+
+## Files added (second round)
+
+`firms.py` (law firm directory data layer), `templates/admin_firms.html`,
+`templates/lawyers.html`, `templates/terms.html`, `templates/privacy.html`,
+`static/js/auth.js`.
+
 ## How this was verified
 
 No live Gemini/MongoDB access exists in the environment this was built
@@ -185,8 +251,20 @@ for a missing database:
 - The new Mongo-unreachable-at-boot handling was verified against a
   real (unroutable) address to confirm it logs and degrades in ~2s
   instead of hanging 30s or crashing the import.
+- Chat attachment validation was exercised directly: a real (tiny, valid)
+  PNG passes through parsing/limit-checks to the AI-not-configured stage;
+  an unsupported file type and an oversized file are both rejected with
+  a clear 400 before any AI call is attempted.
+- Signup's Terms/consent validation was verified with a mocked `db.users`
+  (the offline sandbox has no real database to test against) confirming
+  the "must agree to Terms" rejection actually fires, and that a valid
+  signup stores `terms_accepted_at`, `marketing_consent`, and
+  `training_consent` correctly before redirecting to onboarding.
 
 What to double check on your end: an actual Gemini API round trip
-(streaming + non-streaming), a real Mongo-backed signup → onboarding →
-chat → history → rename/delete flow, and — if you configure SMTP — an
-actual email arriving for password reset and verification.
+(streaming + non-streaming, including a real file attachment), a real
+Mongo-backed signup → onboarding → chat → history → rename/delete flow,
+the full attachment-limit flow against real usage data (upload 3, confirm
+the 4th is blocked, confirm Pro bypasses it), and — if you configure
+SMTP — actual email delivery for the welcome/verification email and
+password reset.

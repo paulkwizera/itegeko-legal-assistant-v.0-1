@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terms of Service — Itegeko</title>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ asset_version('css/style.css') }}">
+</head>
+<body class="account-body">
+    <div class="account-wrap wide">
+        <div class="account-header">
+            <div class="account-header-title">
+                <div class="logo-emblem">⚖</div>
+                <h1>Terms of Service</h1>
+            </div>
+            <a href="{{ url_for('home') }}" class="admin-back">← Back to Itegeko</a>
+        </div>
+
+        <div class="account-card legal-page">
+            <p class="legal-updated">Last updated: {{ updated_date }}</p>
+
+            <h2>1. What Itegeko is</h2>
+            <p>Itegeko is an AI assistant that provides general information about Rwandan law. It is not a law firm, does not provide legal representation, and using it does not create an attorney-client relationship. Nothing Itegeko says is a substitute for advice from a licensed Rwandan advocate about your specific situation.</p>
+
+            <h2>2. Your account</h2>
+            <p>You're responsible for the accuracy of the information you provide and for keeping your password secure. You must be old enough to legally form a contract in your jurisdiction to create an account.</p>
+
+            <h2>3. Acceptable use</h2>
+            <p>Don't use Itegeko to break the law, to attempt to extract harmful content, to overload or abuse the service, or to upload documents you don't have the right to share.</p>
+
+            <h2>4. Documents and files you upload</h2>
+            <p>When you attach a contract, photo, or audio file for review, you confirm you have the right to share it. We process attachments to generate a response; see the Privacy Policy for how long anything is kept.</p>
+
+            <h2>5. Free and Pro plans</h2>
+            <p>Free accounts are subject to daily, weekly, and lifetime usage limits described in the app. Pro is a paid subscription billed as shown at checkout; you can cancel at any time, effective at the end of the current billing period.</p>
+
+            <h2>6. No warranty</h2>
+            <p>Itegeko is provided "as is." AI-generated answers can be incomplete or wrong, and gazette coverage may not be exhaustive. We don't warrant that the service will be uninterrupted or error-free.</p>
+
+            <h2>7. Limitation of liability</h2>
+            <p>To the maximum extent permitted by law, Itegeko and its operators aren't liable for decisions made based on information from the service. Always confirm anything important with a licensed advocate.</p>
+
+            <h2>8. Changes</h2>
+            <p>We may update these terms as the product changes. Continuing to use Itegeko after an update means you accept the revised terms.</p>
+
+            <h2>9. Contact</h2>
+            <p>Questions about these terms can be sent to the support contact provided in your account settings.</p>
+        </div>
+    </div>
+</body>
+</html>

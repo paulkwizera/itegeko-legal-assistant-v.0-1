@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Find a Lawyer — Itegeko</title>
+    <meta name="description" content="Licensed Rwandan law firms Itegeko can point you to for matters that need a real advocate.">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ asset_version('css/style.css') }}">
+</head>
+<body class="account-body">
+    <div class="account-wrap wide">
+        <div class="account-header">
+            <div class="account-header-title">
+                <div class="logo-emblem">⚖</div>
+                <h1>Find a Lawyer</h1>
+            </div>
+            <a href="{{ url_for('home') }}" class="admin-back">← Back to Itegeko</a>
+        </div>
+
+        <p class="lawyers-intro">Itegeko gives general legal information, not representation. For matters that need a licensed advocate — contracts, court proceedings, formal disputes — here are firms you can reach out to directly.</p>
+
+        {% if firms_list %}
+        <div class="firm-grid">
+            {% for f in firms_list %}
+            <div class="firm-card">
+                <div class="firm-name">{{ f.name }}</div>
+                {% if f.specialty %}<div class="firm-specialty">{{ f.specialty }}</div>{% endif %}
+                {% if f.description %}<p class="firm-description">{{ f.description }}</p>{% endif %}
+                <div class="firm-contact">
+                    <a href="tel:{{ f.phone }}" class="firm-contact-row"><span aria-hidden="true">📞</span> {{ f.phone }}</a>
+                    <div class="firm-contact-row"><span aria-hidden="true">📍</span> {{ f.address }}</div>
+                    {% if f.email %}<a href="mailto:{{ f.email }}" class="firm-contact-row"><span aria-hidden="true">✉</span> {{ f.email }}</a>{% endif %}
+                    {% if f.website %}<a href="{{ f.website }}" target="_blank" rel="noopener noreferrer" class="firm-contact-row"><span aria-hidden="true">🔗</span> Website</a>{% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="account-card">
+            <p class="admin-hint">No firms listed yet — check back soon.</p>
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>

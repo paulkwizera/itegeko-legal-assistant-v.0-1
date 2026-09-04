@@ -27,6 +27,7 @@ import db
 import gazette
 import plans
 import payments
+import firms
 from extensions import csrf, limiter
 from auth import auth_bp, login_required
 from auth_email import email_bp
@@ -149,6 +150,80 @@ SYSTEM_INSTRUCTION = (
 # (use gazette matches when found, general knowledge otherwise).
 STRICT_GAZETTE_ONLY = os.environ.get("STRICT_GAZETTE_ONLY", "true").lower() == "true"
 
+# ---------------------------------------------------------------------------
+# Chat attachments -- a photo, PDF, or audio file (e.g. a contract to review,
+# or a voice note describing a situation) sent alongside a message. Gemini
+# reads these natively as multimodal input, so there's no separate
+# OCR/transcription step: the raw bytes go straight into the same
+# send_message() call as the text. Free/guest usage gets a small lifetime
+# allowance (see plans.py); Pro is effectively unlimited.
+# ---------------------------------------------------------------------------
+ATTACHMENT_MIME_KINDS = {
+    "image/jpeg": "image", "image/png": "image", "image/webp": "image",
+    "image/heic": "image", "image/heif": "image",
+    "application/pdf": "pdf",
+    "audio/mpeg": "audio", "audio/mp3": "audio", "audio/wav": "audio",
+    "audio/x-wav": "audio", "audio/mp4": "audio", "audio/m4a": "audio",
+    "audio/x-m4a": "audio", "audio/aac": "audio", "audio/ogg": "audio",
+    "audio/flac": "audio", "audio/webm": "audio",
+}
+# Separate from (and tighter than) the global MAX_CONTENT_LENGTH, which
+# mainly exists for admin-only gazette PDF uploads -- chat attachments are
+# reachable by every visitor, not just trusted admins, so a smaller ceiling
+# here keeps one request from tying up an AI call for too long.
+MAX_CHAT_ATTACHMENT_SIZE = 15 * 1024 * 1024
+
+
+def _read_chat_attachment(file_storage):
+    """Validates an uploaded chat attachment and reads it into memory.
+    Returns (bytes, mime_type, kind, filename), or raises ValueError with
+    a message that's safe to show the user directly."""
+    mime_type = file_storage.mimetype or ""
+    kind = ATTACHMENT_MIME_KINDS.get(mime_type)
+    if not kind:
+        raise ValueError("That file type isn't supported. Please attach a photo (JPEG/PNG/WebP), a PDF, or an audio file (MP3/WAV/M4A/AAC/OGG).")
+    file_bytes = file_storage.read()
+    if not file_bytes:
+        raise ValueError("That file appears to be empty.")
+    if len(file_bytes) > MAX_CHAT_ATTACHMENT_SIZE:
+        raise ValueError("That file is too large (15MB max for chat attachments).")
+    return file_bytes, mime_type, kind, file_storage.filename
+
+
+def _attachment_instruction(kind, filename):
+    if kind == "audio":
+        return (
+            f"The user has attached an audio file ({filename}). Listen to it and respond to what is "
+            "said as you would to a typed question -- if it describes a legal situation, analyze it "
+            "under Rwandan law as usual, citing relevant law where applicable."
+        )
+    return (
+        f"The user has attached a document ({filename}) for you to review -- likely a contract, notice, "
+        "or similar. Read its actual content carefully and: (1) summarize what it is and its main terms, "
+        "(2) assess whether it appears legally viable/enforceable under Rwandan law and flag any risks, "
+        "one-sided clauses, missing elements, or unclear terms, (3) cite the relevant Rwandan law or "
+        "article where applicable. Always make clear this is general guidance, not a substitute for "
+        "review by a licensed Rwandan advocate."
+    )
+
+
+def _build_message_content(user_message, attachment=None):
+    """Returns (content, sources). content is a plain string for text-only
+    messages (unchanged fast path), or a list of parts (grounded text +
+    attachment-specific instruction + the file itself) when a file is
+    attached -- chat.send_message()/send_message_stream() accept either."""
+    if attachment:
+        file_bytes, mime_type, kind, filename = attachment
+        effective_message = user_message or (
+            "Please review the attached document and assess whether it is legally viable under Rwandan law."
+            if kind != "audio" else "Please listen to the attached audio and respond."
+        )
+        message_to_send, sources = _build_grounded_message(effective_message)
+        part = types.Part.from_bytes(data=file_bytes, mime_type=mime_type)
+        return [message_to_send, _attachment_instruction(kind, filename), part], sources
+
+    return _build_grounded_message(user_message)
+
 
 def _make_config():
     return types.GenerateContentConfig(
@@ -203,10 +278,20 @@ def _load_history_from_db(user_id, conversation_id):
 def _reconstruct_gemini_history(db_messages):
     """Turn our stored {role, text} documents back into the Content objects
     chats.create(history=...) expects, so a rebuilt chat has full context
-    without replaying every turn through the API again."""
+    without replaying every turn through the API again. Note: we don't keep
+    the original attachment bytes anywhere (see /chat), so a message that
+    had a file attached is reconstructed as a text note about it rather
+    than the actual image/PDF/audio -- Gemini can only "see" an attachment
+    again on the live turn it was uploaded in, not after the in-memory chat
+    session has been rebuilt from history (e.g. after a restart)."""
     history = []
     for m in db_messages:
-        history.append(types.Content(role=m["role"], parts=[types.Part(text=m["text"])]))
+        text = m["text"]
+        attachment = m.get("attachment")
+        if attachment:
+            note = f"[The user attached a file: {attachment.get('filename', 'file')}]"
+            text = f"{note}\n\n{text}" if text else note
+        history.append(types.Content(role=m["role"], parts=[types.Part(text=text)]))
     return history
 
 
@@ -252,23 +337,27 @@ def current_identity():
     return f"guest:{session['guest_id']}", True
 
 
-def _save_message(user_id, conversation_id, role, text):
+def _save_message(user_id, conversation_id, role, text, attachment=None):
     if db.messages is None:
         return
-    db.messages.insert_one({
+    doc = {
         "user_id": user_id,
         "conversation_id": conversation_id,
         "role": role,
         "text": text,
         "created_at": datetime.now(timezone.utc),
-    })
+    }
+    if attachment:
+        doc["attachment"] = attachment
+    db.messages.insert_one(doc)
     # Create or update the conversation document
     if db.conversations is not None and role == "user":
         now = datetime.now(timezone.utc)
         existing = db.conversations.find_one({"conversation_id": conversation_id, "user_id": user_id})
         if not existing:
-            title = text[:60].strip()
-            if len(text) > 60:
+            title_source = text or (f"Attached: {attachment['filename']}" if attachment else "New conversation")
+            title = title_source[:60].strip()
+            if len(title_source) > 60:
                 title = title.rsplit(" ", 1)[0] + "…"
             db.conversations.insert_one({
                 "user_id": user_id,
@@ -338,18 +427,62 @@ def home():
     )
 
 
+def _parse_chat_request():
+    """Parses either a JSON body ({"message": ...}, the normal case) or a
+    multipart form (message + optional file, used only when the frontend
+    has a file to attach) -- so plain text messages keep using the
+    lighter JSON path unchanged. Returns (user_message, attachment) where
+    attachment is None or (bytes, mime_type, kind, filename). Raises
+    ValueError with a message that's safe to show the user directly."""
+    if request.content_type and request.content_type.startswith("multipart/form-data"):
+        user_message = (request.form.get("message") or "").strip()
+        uploaded_file = request.files.get("file")
+    else:
+        data = request.get_json(silent=True) or {}
+        user_message = (data.get("message") or "").strip()
+        uploaded_file = None
+
+    attachment = None
+    if uploaded_file and uploaded_file.filename:
+        attachment = _read_chat_attachment(uploaded_file)  # raises ValueError on bad type/size
+
+    if not user_message and not attachment:
+        raise ValueError("Please enter a question before sending.")
+    if user_message and len(user_message) > 4000:
+        raise ValueError("That message is too long (4000 character limit).")
+
+    return user_message, attachment
+
+
+def _check_attachment_limit(user_id, is_guest):
+    """Returns an error dict for a 403 response if the lifetime attachment
+    allowance is used up, or None if this upload is allowed."""
+    if session.get("is_admin"):
+        return None
+    plan = "free" if is_guest else plans.get_plan(user_id)
+    if plans.attachments_used(user_id) < plans.attachment_limit_for(plan):
+        return None
+    return {
+        "error": "You've used all 3 free document uploads."
+                 + (" Sign up and upgrade to Itegeko Pro for unlimited uploads." if is_guest
+                    else " Upgrade to Itegeko Pro for unlimited uploads."),
+        "limit_reached": True,
+        "limit_type": "attachment",
+        "upgrade_url": url_for("pricing"),
+        "signup_url": url_for("auth.signup"),
+    }
+
+
 @app.route("/chat", methods=["POST"])
 @csrf.exempt
 @limiter.limit("30 per minute")
 def chat_endpoint():
     ensure_conversation()
-    data = request.get_json(silent=True) or {}
-    user_message = (data.get("message") or "").strip()
+    try:
+        user_message, attachment = _parse_chat_request()
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
-    if not user_message:
-        return jsonify({"error": "Please enter a question before sending."}), 400
-    if len(user_message) > 4000:
-        return jsonify({"error": "That message is too long (4000 character limit)."}), 400
     if client is None:
         return jsonify({"error": "The AI service is not configured yet. Please set GEMINI_API_KEY to enable responses."}), 503
 
@@ -386,13 +519,30 @@ def chat_endpoint():
                 "upgrade_url": url_for("pricing"),
             }), 403
 
+    if attachment:
+        limit_error = _check_attachment_limit(user_id, is_guest)
+        if limit_error:
+            return jsonify(limit_error), 403
+
     entry = get_active_conversation(user_id)
-    message_to_send, sources = _build_grounded_message(user_message)
+    message_to_send, sources = _build_message_content(user_message, attachment)
 
     try:
         response = send_message_with_fallback(entry, message_to_send)
         reply_text = response.text
-        _save_message(user_id, conversation_id, "user", user_message)
+
+        attachment_meta = None
+        if attachment:
+            file_bytes, mime_type, kind, filename = attachment
+            attachment_meta = {"filename": filename, "mime_type": mime_type, "kind": kind}
+            if db.attachments is not None:
+                db.attachments.insert_one({
+                    "user_id": user_id, "conversation_id": conversation_id,
+                    "filename": filename, "mime_type": mime_type, "kind": kind,
+                    "size_bytes": len(file_bytes), "created_at": datetime.now(timezone.utc),
+                })
+
+        _save_message(user_id, conversation_id, "user", user_message, attachment=attachment_meta)
         _save_message(user_id, conversation_id, "model", reply_text)
 
         extra = {}
@@ -475,13 +625,11 @@ def _build_grounded_message(user_message):
 def chat_stream_endpoint():
     """SSE streaming version of /chat. Sends tokens as they arrive from Gemini."""
     ensure_conversation()
-    data = request.get_json(silent=True) or {}
-    user_message = (data.get("message") or "").strip()
+    try:
+        user_message, attachment = _parse_chat_request()
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
-    if not user_message:
-        return jsonify({"error": "Please enter a question before sending."}), 400
-    if len(user_message) > 4000:
-        return jsonify({"error": "That message is too long (4000 character limit)."}), 400
     if client is None:
         return jsonify({"error": "The AI service is not configured yet."}), 503
 
@@ -499,8 +647,13 @@ def chat_stream_endpoint():
         if plans.messages_used_this_week(user_id) >= plans.weekly_limit_for(user_plan):
             return jsonify({"error": "You've reached your weekly free limit.", "limit_reached": True, "limit_type": "weekly", "upgrade_url": url_for("pricing")}), 403
 
+    if attachment:
+        limit_error = _check_attachment_limit(user_id, is_guest)
+        if limit_error:
+            return jsonify(limit_error), 403
+
     entry = get_active_conversation(user_id)
-    message_to_send, sources = _build_grounded_message(user_message)
+    message_to_send, sources = _build_message_content(user_message, attachment)
 
     def generate():
         full_reply = []
@@ -513,7 +666,19 @@ def chat_stream_endpoint():
                     yield f"data: {json.dumps({'token': token})}\n\n"
 
             reply_text = "".join(full_reply)
-            _save_message(user_id, conversation_id, "user", user_message)
+
+            attachment_meta = None
+            if attachment:
+                file_bytes, mime_type, kind, filename = attachment
+                attachment_meta = {"filename": filename, "mime_type": mime_type, "kind": kind}
+                if db.attachments is not None:
+                    db.attachments.insert_one({
+                        "user_id": user_id, "conversation_id": conversation_id,
+                        "filename": filename, "mime_type": mime_type, "kind": kind,
+                        "size_bytes": len(file_bytes), "created_at": datetime.now(timezone.utc),
+                    })
+
+            _save_message(user_id, conversation_id, "user", user_message, attachment=attachment_meta)
             _save_message(user_id, conversation_id, "model", reply_text)
 
             # Guest prompt tracking
@@ -543,7 +708,12 @@ def chat_history():
     user_id, _ = current_identity()
     db_messages = _load_history_from_db(user_id, session["conversation_id"])
     history = [
-        {"role": "user" if m["role"] == "user" else "assistant", "text": m["text"], "time": m["created_at"].strftime("%H:%M")}
+        {
+            "role": "user" if m["role"] == "user" else "assistant",
+            "text": m["text"],
+            "time": m["created_at"].strftime("%H:%M"),
+            "attachment": m.get("attachment"),
+        }
         for m in db_messages
     ]
     return jsonify({"history": history, "conversation_id": session["conversation_id"]})
@@ -561,6 +731,8 @@ def api_usage():
             "daily_limit": plans.GUEST_MESSAGE_LIMIT,
             "weekly_used": guest_count,
             "weekly_limit": plans.GUEST_MESSAGE_LIMIT,
+            "attachments_used": plans.attachments_used(user_id),
+            "attachments_limit": plans.attachment_limit_for("free"),
         })
     user_plan = plans.get_plan(user_id)
     return jsonify({
@@ -569,6 +741,8 @@ def api_usage():
         "daily_limit": plans.daily_limit_for(user_plan),
         "weekly_used": plans.messages_used_this_week(user_id),
         "weekly_limit": plans.weekly_limit_for(user_plan),
+        "attachments_used": plans.attachments_used(user_id),
+        "attachments_limit": plans.attachment_limit_for(user_plan),
     })
 
 
@@ -709,6 +883,23 @@ def pricing():
         price_label=payments.PRO_PRICE_LABEL,
         payments_configured=payments.is_configured(),
     )
+
+
+@app.route("/lawyers")
+def lawyers():
+    """Public directory of real law firms -- Itegeko only gives general
+    information, this is where people go for actual representation."""
+    return render_template("lawyers.html", firms_list=firms.list_firms())
+
+
+@app.route("/terms")
+def terms():
+    return render_template("terms.html", updated_date=datetime.now(timezone.utc).strftime("%B %Y"))
+
+
+@app.route("/privacy")
+def privacy():
+    return render_template("privacy.html", updated_date=datetime.now(timezone.utc).strftime("%B %Y"))
 
 
 @app.route("/upgrade", methods=["POST"])

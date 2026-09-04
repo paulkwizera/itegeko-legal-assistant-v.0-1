@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy — Itegeko</title>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ asset_version('css/style.css') }}">
+</head>
+<body class="account-body">
+    <div class="account-wrap wide">
+        <div class="account-header">
+            <div class="account-header-title">
+                <div class="logo-emblem">⚖</div>
+                <h1>Privacy Policy</h1>
+            </div>
+            <a href="{{ url_for('home') }}" class="admin-back">← Back to Itegeko</a>
+        </div>
+
+        <div class="account-card legal-page">
+            <p class="legal-updated">Last updated: {{ updated_date }}</p>
+
+            <h2>What we collect</h2>
+            <p>Your name and email when you create an account; the messages you send and the AI's replies; any contract, photo, or audio file you attach for review; and basic usage data (how many messages/uploads you've sent, so free-plan limits work).</p>
+
+            <h2>How we use it</h2>
+            <p>To run the service: answering your questions, keeping your conversation history, enforcing plan limits, and sending account-related email (verification, password reset, receipts). These are things we do regardless of the choices below, because the service can't work without them.</p>
+
+            <h2>Marketing email</h2>
+            <p>If you opted in at signup, we may occasionally email you about new features or offers. This is separate from account emails (verification, password reset) which are sent either way. You can withdraw this consent any time from Settings.</p>
+
+            <h2>Using conversations to improve our AI models</h2>
+            <p>We do not use your conversations to train or improve AI models unless you've explicitly opted in. If you opted in at signup, that consent applies only going forward from when the feature is actually built and enabled -- it does not retroactively change how earlier conversations were handled. You can withdraw this consent any time from Settings, which stops any future use going forward.</p>
+
+            <h2>Attached documents</h2>
+            <p>Files you attach (contracts, photos, audio) are sent to our AI provider to generate a response to that specific message. We don't currently keep a separate copy of the original file after that -- only a record of the filename and type, so your free-upload allowance can be tracked and so the message shows what was attached if you revisit the conversation.</p>
+
+            <h2>Who else sees your data</h2>
+            <p>Google's Gemini API processes your messages and attachments to generate responses. Our email provider sends account and (if you opted in) marketing email. Our payment processor handles Pro subscription billing. We don't sell your data to advertisers.</p>
+
+            <h2>How long we keep it</h2>
+            <p>Conversation history is kept until you delete it (from the sidebar) or delete your account. Password reset and email verification links expire after a short window automatically.</p>
+
+            <h2>Your choices</h2>
+            <p>You can rename or delete any conversation, change your marketing and model-training preferences, change your password, and request account deletion -- all from Settings, or by contacting us directly.</p>
+
+            <h2>Children</h2>
+            <p>Itegeko isn't directed at children and we don't knowingly collect data from anyone below the age where they can legally form a contract.</p>
+
+            <h2>Changes to this policy</h2>
+            <p>If this policy changes in a way that affects how we use your data, we'll update the date above and, for significant changes, aim to let existing users know.</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -114,3 +114,24 @@ def change_password():
         db.users.update_one({"_id": user["_id"]}, {"$set": {"password_hash": generate_password_hash(new_password)}})
     return render_template("settings.html", user=user, email_configured=is_email_configured(),
                             password_success="Your password has been changed.")
+
+
+@account_bp.route("/settings/preferences", methods=["POST"])
+@login_required
+def update_preferences():
+    user = _get_current_user()
+    if not user:
+        return redirect(url_for("auth.login"))
+
+    marketing_consent = request.form.get("marketing_consent") == "on"
+    training_consent = request.form.get("training_consent") == "on"
+
+    if db.users is not None:
+        db.users.update_one(
+            {"_id": user["_id"]},
+            {"$set": {"marketing_consent": marketing_consent, "training_consent": training_consent}},
+        )
+    user["marketing_consent"] = marketing_consent
+    user["training_consent"] = training_consent
+    return render_template("settings.html", user=user, email_configured=is_email_configured(),
+                            preferences_success="Your preferences have been saved.")

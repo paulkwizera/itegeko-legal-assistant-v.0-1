@@ -33,6 +33,14 @@ PRO_PLAN_DAILY_LIMIT = int(os.environ.get("PRO_PLAN_DAILY_LIMIT", "500"))
 # Messages/week for Pro -- very high safety limit.
 PRO_PLAN_WEEKLY_LIMIT = int(os.environ.get("PRO_PLAN_WEEKLY_LIMIT", "3500"))
 
+# Document/photo/audio uploads: a lifetime "free trial" allowance rather
+# than a recurring daily/weekly quota like messages -- once it's used, it
+# stays used unless the account upgrades. Pro gets a very high safety
+# ceiling instead of a literal unlimited, same philosophy as the message
+# limits above.
+FREE_ATTACHMENT_LIMIT = int(os.environ.get("FREE_ATTACHMENT_LIMIT", "3"))
+PRO_ATTACHMENT_LIMIT = int(os.environ.get("PRO_ATTACHMENT_LIMIT", "1000"))
+
 
 def get_plan(user_id):
     """Returns 'pro' or 'free' for a logged-in user. Auto-downgrades (and
@@ -91,3 +99,15 @@ def daily_limit_for(plan):
 
 def weekly_limit_for(plan):
     return PRO_PLAN_WEEKLY_LIMIT if plan == "pro" else FREE_PLAN_WEEKLY_LIMIT
+
+
+def attachment_limit_for(plan):
+    return PRO_ATTACHMENT_LIMIT if plan == "pro" else FREE_ATTACHMENT_LIMIT
+
+
+def attachments_used(user_id):
+    """Lifetime count of files/photos/audio this user (or guest) has
+    uploaded for review -- unlike message limits above, this never resets."""
+    if db.attachments is None:
+        return 0
+    return db.attachments.count_documents({"user_id": user_id})

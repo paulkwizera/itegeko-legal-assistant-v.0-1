@@ -107,6 +107,7 @@ body {
     cursor: pointer;
     transition: background .15s ease, color .15s ease;
     text-align: left;
+    text-decoration: none;
 }
 .nav-item:hover { background: var(--sidebar-hover); color: var(--text-primary); }
 .nav-item.active { background: var(--surface); color: var(--gold-light); }
@@ -1335,3 +1336,135 @@ body {
     .account-body { padding: 20px 14px 40px; }
     .limit-card { max-width: 100%; }
 }
+
+/* ── Law firm directory (/lawyers) ────────────────── */
+.account-wrap.wide { max-width: 780px; }
+.lawyers-intro {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin: -6px 0 4px;
+}
+.firm-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+}
+.firm-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.firm-name { font-size: 1rem; font-weight: 600; color: var(--text-primary); }
+.firm-specialty {
+    font-size: 0.72rem;
+    color: var(--gold-light);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+}
+.firm-description { font-size: 0.82rem; color: var(--text-secondary); line-height: 1.55; margin: 2px 0 4px; }
+.firm-contact { display: flex; flex-direction: column; gap: 5px; margin-top: 4px; }
+.firm-contact-row {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+a.firm-contact-row:hover { color: var(--gold-light); }
+
+@media (max-width: 680px) {
+    .firm-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Chat attachments (photo / PDF / audio) ───────── */
+.attach-preview { margin-bottom: 8px; }
+.attach-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 6px 8px 6px 12px;
+    font-size: 0.78rem;
+    color: var(--text-primary);
+    max-width: 100%;
+}
+.attach-chip-icon { font-size: 0.95rem; flex-shrink: 0; }
+.attach-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attach-chip-remove {
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    border: none;
+    background: var(--surface-hover);
+    color: var(--text-secondary);
+    font-size: 0.7rem;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.attach-chip-remove:hover { background: rgba(239,68,68,0.15); color: #f87171; }
+
+.user-row .attach-chip { margin-bottom: 6px; background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.12); }
+
+.composer-icon-btn.exhausted { opacity: 0.45; }
+.composer-icon-btn.exhausted:hover { color: var(--text-secondary); }
+
+/* ── Password show/hide toggle ────────────────────── */
+.password-field { position: relative; display: flex; }
+.password-field input {
+    width: 100%;
+    box-sizing: border-box;
+    padding-right: 42px !important;
+}
+.password-toggle-btn {
+    position: absolute;
+    right: 6px; top: 50%;
+    transform: translateY(-50%);
+    width: 28px; height: 28px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 6px;
+}
+.password-toggle-btn:hover { color: var(--text-primary); background: var(--surface-hover); }
+.password-toggle-btn svg { width: 17px; height: 17px; }
+.password-toggle-btn .eye-off-icon { display: none; }
+.password-toggle-btn.showing .eye-icon { display: none; }
+.password-toggle-btn.showing .eye-off-icon { display: block; }
+
+/* ── Consent checkboxes (signup) ──────────────────── */
+.consent-field {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    font-size: 0.76rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    cursor: pointer;
+}
+.consent-field input[type="checkbox"] {
+    width: 16px; height: 16px;
+    margin-top: 1px;
+    accent-color: var(--gold-light);
+    flex-shrink: 0;
+    cursor: pointer;
+}
+.consent-field a { color: var(--gold-light); text-decoration: underline; }
+
+/* ── Terms / Privacy pages ─────────────────────────── */
+.legal-page { gap: 4px; }
+.legal-updated { font-size: 0.74rem; color: var(--text-muted); margin: -4px 0 8px; }
+.legal-page h2 { font-size: 0.92rem; font-weight: 600; color: var(--text-primary); margin: 18px 0 6px; }
+.legal-page h2:first-of-type { margin-top: 4px; }
+.legal-page p { font-size: 0.84rem; color: var(--text-secondary); line-height: 1.65; margin: 0 0 4px; }
+.legal-page a { color: var(--gold-light); }

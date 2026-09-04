@@ -15,6 +15,7 @@ import logging
 from flask import Blueprint, render_template, request, redirect, url_for, send_file, flash
 
 import gazette
+import firms
 from auth import admin_required
 
 logger = logging.getLogger("itegeko.admin")
@@ -90,3 +91,45 @@ def download_document(file_id):
         as_attachment=True,
         download_name=grid_out.filename or "document.pdf",
     )
+
+
+# ---------------------------------------------------------------------------
+# Law firm / lawyer directory -- shown publicly at /lawyers. Admin can add
+# and remove entries; there's no public submission path.
+# ---------------------------------------------------------------------------
+
+@admin_bp.route("/firms", methods=["GET"])
+@admin_required
+def list_firms():
+    return render_template("admin_firms.html", firms_list=firms.list_firms())
+
+
+@admin_bp.route("/firms/add", methods=["POST"])
+@admin_required
+def add_firm():
+    try:
+        firms.add_firm(
+            name=request.form.get("name"),
+            phone=request.form.get("phone"),
+            address=request.form.get("address"),
+            email=request.form.get("email"),
+            website=request.form.get("website"),
+            specialty=request.form.get("specialty"),
+            description=request.form.get("description"),
+        )
+        flash(f"Added '{request.form.get('name')}'.", "success")
+    except ValueError as e:
+        flash(str(e), "error")
+    except Exception:
+        logger.exception("Adding a firm failed")
+        flash("Couldn't save that firm -- check the server logs for details.", "error")
+    return redirect(url_for("admin.list_firms"))
+
+
+@admin_bp.route("/firms/delete", methods=["POST"])
+@admin_required
+def delete_firm():
+    firm_id = request.form.get("firm_id", "")
+    if firm_id:
+        firms.delete_firm(firm_id)
+    return redirect(url_for("admin.list_firms"))
